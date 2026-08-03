@@ -1,4 +1,4 @@
-// Transit Lines desktop shell. Serves the built game (dist/) over a private
+// Intralines Bus Simulator desktop shell. Serves the built game (dist/) over a private
 // app:// protocol so the renderer gets a stable origin — that keeps Web
 // Workers, IndexedDB city caches, and localStorage saves working exactly as
 // they do in a browser.
@@ -22,7 +22,7 @@ function createWindow() {
     height: 900,
     minWidth: 960,
     minHeight: 600,
-    title: 'Transit Lines',
+    title: 'Intralines Bus Simulator',
     backgroundColor: '#f3edda',
     autoHideMenuBar: true,
     webPreferences: {

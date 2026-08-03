@@ -1,5 +1,5 @@
 {
-  "name": "transit-lines",
+  "name": "intralines-bus-simulator",
   "private": true,
   "version": "0.1.0",
   "type": "module",
@@ -15,8 +15,8 @@
     "test": "node scripts/test-pipeline.mjs"
   },
   "build": {
-    "appId": "com.transitlines.game",
-    "productName": "Transit Lines",
+    "appId": "com.intralines.bussimulator",
+    "productName": "Intralines Bus Simulator",
     "files": [
       "dist/**",
       "electron/**"

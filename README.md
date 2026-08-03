@@ -1,4 +1,4 @@
-# 🚌 Transit Lines
+# 🚌 Intralines Bus Simulator
 
 A bus company management game in the spirit of **City Bus Manager**, with the map feel and
 real-data simulation of **Subway Builder**: a colorful pan/tilt/rotate map of a real US city,

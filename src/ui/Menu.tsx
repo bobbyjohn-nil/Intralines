@@ -48,7 +48,7 @@ export function Menu() {
       <div className="menu-inner">
         <h1 className="logo-row">
           <span className="logo-mark"><BusSide length={1} size={54} /></span>
-          Transit Lines
+          Intralines Bus Simulator
         </h1>
         <p className="tagline">
           Build a bus company on a real city. Real streets, real census commuters — draw

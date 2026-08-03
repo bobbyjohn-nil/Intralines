@@ -585,7 +585,7 @@ function FinancePanel() {
             const blob = new Blob([exportSave()], { type: 'application/json' });
             const a = document.createElement('a');
             a.href = URL.createObjectURL(blob);
-            a.download = 'transit-lines-save.json';
+            a.download = 'intralines-save.json';
             a.click();
           }}
         >

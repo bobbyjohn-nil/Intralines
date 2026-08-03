@@ -75,7 +75,7 @@ const OVERPASS = [
 ];
 // OSM services block anonymous datacenter clients — identify ourselves
 const USER_AGENT =
-  'TransitLinesGame/0.1 (open-source bus simulation; https://github.com/bobbyjohn-nil/Transit-Lines)';
+  'IntralinesBusSimulator/0.1 (open-source bus simulation; https://github.com/bobbyjohn-nil/Transit-Lines)';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
