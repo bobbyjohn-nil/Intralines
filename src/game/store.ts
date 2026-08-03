@@ -69,6 +69,8 @@ export interface GameState {
   basemapPref: 'auto' | 'offline';
   /** what the map actually used this session (for the toggle button icon) */
   basemapActive: 'online' | 'offline';
+  /** city-load failure shown on the menu (survives the menu remounting) */
+  menuError: string | null;
 
   // actions
   openCity: (pack: CityPack) => void;
@@ -82,6 +84,7 @@ export interface GameState {
   setHeatmap: (h: 'off' | 'pop' | 'jobs') => void;
   toggleBasemap: () => void;
   setBasemapActive: (m: 'online' | 'offline') => void;
+  setMenuError: (e: string | null) => void;
   mapClick: (pt: LngLat) => void;
   undoDraftStop: () => void;
   cancelDraft: () => void;
@@ -244,6 +247,7 @@ export const useGame = create<GameState>((set, get) => {
         (localStorage.getItem('tl-basemap') as 'auto' | 'offline')) ||
       'auto',
     basemapActive: 'offline',
+    menuError: null,
 
     openCity: (pack) => {
       worker?.terminate();
@@ -408,6 +412,8 @@ export const useGame = create<GameState>((set, get) => {
     },
 
     setBasemapActive: (m) => set({ basemapActive: m }),
+
+    setMenuError: (e) => set({ menuError: e }),
 
     mapClick: (pt) => {
       const s = get();

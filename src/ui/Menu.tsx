@@ -9,7 +9,10 @@ import type { CityMeta } from '../game/types';
 export function Menu() {
   const openCity = useGame((s) => s.openCity);
   const setLoading = useGame((s) => s.setLoading);
-  const [error, setError] = useState<string | null>(null);
+  // error lives in the store: the menu unmounts during loading, so local
+  // state would vanish before anyone could read it
+  const error = useGame((s) => s.menuError);
+  const setError = useGame((s) => s.setMenuError);
   const [cached, setCached] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
@@ -29,10 +32,12 @@ export function Menu() {
       setLoading('');
       openCity(pack);
     } catch (e) {
+      // eslint-disable-next-line no-console
+      console.error('city load failed', e);
       setLoading('');
       setError(
-        `${meta.name}: ${(e as Error).message} — live census/OpenStreetMap downloads ` +
-          `need internet access. The demo city always works, or bake data with "npm run bake".`,
+        `${meta.name} failed to load — ${(e as Error).message}. ` +
+          `Check your internet connection and try again; the demo city always works.`,
       );
     }
   }
@@ -68,7 +73,7 @@ export function Menu() {
                     ? 'Bundled sample city. Start here to learn the ropes.'
                     : cached[c.id]
                       ? 'Census + street data ready to go.'
-                      : 'First launch downloads census + street data in your browser (≈10–40 MB, one time).'}
+                      : 'Real census + street data. Loads instantly when bundled with the game; otherwise a one-time browser download (≈10–40 MB).'}
                 </div>
                 <div className="btn-row">
                   <button className="btn primary" onClick={() => start(c)}>

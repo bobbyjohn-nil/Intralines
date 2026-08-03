@@ -8,7 +8,7 @@
 // Sources: Census TIGERweb (block group geometry), ACS 5-year (population),
 // LEHD LODES WAC (jobs), OpenStreetMap via Overpass (streets).
 
-import { writeFileSync, mkdirSync } from 'node:fs';
+import { writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { gunzipSync, gzipSync } from 'node:zlib';
@@ -205,11 +205,16 @@ async function overpass(q) {
   throw lastErr;
 }
 
-async function bake(id) {
+async function bake(id, force) {
   const meta = CITIES[id];
   if (!meta) {
     console.error(`Unknown city "${id}". Options: ${Object.keys(CITIES).join(', ')}, all`);
     process.exitCode = 1;
+    return;
+  }
+  const existing = join(__dirname, '..', 'public', 'cities', `${id}.json.gz`);
+  if (existsSync(existing) && !force) {
+    console.log(`\n${meta.name}: already baked (${existing}) — use --force to refresh.`);
     return;
   }
   console.log(`\nBaking ${meta.name}…`);
@@ -254,8 +259,20 @@ async function bake(id) {
 }
 
 const args = process.argv.slice(2).filter((a) => a !== '--');
-const targets = args.includes('all') || args.length === 0 ? Object.keys(CITIES) : args;
+const force = args.includes('--force');
+const names = args.filter((a) => a !== '--force');
+const targets = names.includes('all') || names.length === 0 ? Object.keys(CITIES) : names;
+let failures = 0;
 for (const t of targets) {
-  // eslint-disable-next-line no-await-in-loop
-  await bake(t);
+  try {
+    // eslint-disable-next-line no-await-in-loop
+    await bake(t, force);
+  } catch (e) {
+    failures++;
+    console.error(`\n${t} FAILED: ${e.stack ?? e}`);
+  }
+}
+if (failures) {
+  console.error(`\n${failures} city bake(s) failed.`);
+  process.exitCode = 1;
 }
