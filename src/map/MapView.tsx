@@ -31,6 +31,7 @@ export function MapView({ pack }: { pack: CityPack }) {
   const busLayerRef = useRef<BusLayer3D | null>(null);
   const readyRef = useRef(false);
   const depotMarkerRef = useRef<maplibregl.Marker | null>(null);
+  const chipsRef = useRef<Map<string, maplibregl.Marker>>(new Map());
 
   const stops = useGame((s) => s.stops);
   const lines = useGame((s) => s.lines);
@@ -48,6 +49,7 @@ export function MapView({ pack }: { pack: CityPack }) {
     let cancelled = false;
     let map: MLMap | null = null;
     let dayNight: ReturnType<typeof setInterval> | null = null;
+    let stopChips: ReturnType<typeof setInterval> | null = null;
 
     const boot = async (): Promise<void> => {
       const online =
@@ -152,6 +154,38 @@ export function MapView({ pack }: { pack: CityPack }) {
         });
       });
 
+      // live waiting-passenger chips above stops
+      stopChips = setInterval(() => {
+        if (!readyRef.current || !map || !busLayerRef.current) return;
+        const chips = chipsRef.current;
+        const zoomNow = map.getZoom();
+        const counts =
+          zoomNow >= 12.3 ? busLayerRef.current.getStopCounts() : [];
+        const seen = new Set<string>();
+        for (const c of counts) {
+          seen.add(c.id);
+          let m = chips.get(c.id);
+          if (!m) {
+            const el = document.createElement('div');
+            el.className = 'stop-count';
+            m = new maplibregl.Marker({ element: el, anchor: 'bottom', offset: [0, -10] })
+              .setLngLat(c.pt)
+              .addTo(map!);
+            chips.set(c.id, m);
+          }
+          const el = m.getElement();
+          const label = String(c.count);
+          if (el.textContent !== label) el.textContent = label;
+          el.title = `${c.count} waiting`;
+        }
+        for (const [id, m] of chips) {
+          if (!seen.has(id)) {
+            m.remove();
+            chips.delete(id);
+          }
+        }
+      }, 600);
+
       // day/night tinting for the basemap
       dayNight = setInterval(() => {
         if (!readyRef.current || !map) return;
@@ -185,6 +219,9 @@ export function MapView({ pack }: { pack: CityPack }) {
     return () => {
       cancelled = true;
       if (dayNight) clearInterval(dayNight);
+      if (stopChips) clearInterval(stopChips);
+      chipsRef.current.forEach((m) => m.remove());
+      chipsRef.current.clear();
       readyRef.current = false;
       depotMarkerRef.current?.remove();
       depotMarkerRef.current = null;

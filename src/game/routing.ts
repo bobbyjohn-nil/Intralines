@@ -14,9 +14,19 @@ interface Adj {
 export class RoadGraph {
   private adj: Adj[][];
   private grid: SpatialGrid<number>;
+  private edgeGrid: SpatialGrid<number>;
   private cosLat: number;
 
   constructor(public pack: CityPack) {
+    this.cosLat = Math.cos((pack.meta.center[1] * Math.PI) / 180);
+    this.adj = [];
+    this.grid = new SpatialGrid<number>(0.004);
+    this.edgeGrid = new SpatialGrid<number>(0.004);
+    this.rebuildIndexes();
+  }
+
+  private rebuildIndexes(): void {
+    const { pack } = this;
     const n = pack.nodes.length;
     this.adj = Array.from({ length: n }, () => []);
     pack.edges.forEach((e, i) => {
@@ -27,12 +37,134 @@ export class RoadGraph {
     pack.nodes.forEach((pt, i) => {
       if (this.adj[i].length > 0) this.grid.add(pt, i);
     });
-    this.cosLat = Math.cos((pack.meta.center[1] * Math.PI) / 180);
+    // index edges by sample points along their shape so clicks can find the
+    // nearest street, not just the nearest intersection
+    this.edgeGrid = new SpatialGrid<number>(0.004);
+    pack.edges.forEach((e, i) => this.indexEdge(i));
+  }
+
+  private indexEdge(i: number): void {
+    const e = this.pack.edges[i];
+    const chain: LngLat[] = [this.pack.nodes[e.a], ...e.pts, this.pack.nodes[e.b]];
+    for (let s = 0; s < chain.length - 1; s++) {
+      const a = chain[s];
+      const b = chain[s + 1];
+      const len = fastDistM(a, b, this.cosLat);
+      const steps = Math.max(1, Math.ceil(len / 90));
+      for (let k = 0; k <= steps; k++) {
+        const t = k / steps;
+        this.edgeGrid.add([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t], i);
+      }
+    }
   }
 
   nearestNode(pt: LngLat, maxM = 220): number | null {
     const hit = this.grid.nearest(pt, maxM);
     return hit === null ? null : hit.item;
+  }
+
+  /**
+   * Precise stop placement: project the click onto the nearest street and
+   * split that street there, creating a routable node exactly at the curb —
+   * mid-block stops included. Falls back to an existing node when the
+   * projection lands on one.
+   */
+  insertStopNode(pt: LngLat, maxM = 220): number | null {
+    const candidates = new Set<number>();
+    for (const hit of this.edgeGrid.within(pt, maxM)) candidates.add(hit.item);
+    if (!candidates.size) return null;
+
+    let best: { edge: number; distM: number; proj: LngLat; alongM: number } | null = null;
+    for (const ei of candidates) {
+      const e = this.pack.edges[ei];
+      const chain: LngLat[] = [this.pack.nodes[e.a], ...e.pts, this.pack.nodes[e.b]];
+      let along = 0;
+      for (let s = 0; s < chain.length - 1; s++) {
+        const a = chain[s];
+        const b = chain[s + 1];
+        const segLen = fastDistM(a, b, this.cosLat);
+        if (segLen < 0.5) continue;
+        // project pt onto segment ab in local meters
+        const ax = 0;
+        const ay = 0;
+        const bx = (b[0] - a[0]) * 111320 * this.cosLat;
+        const by = (b[1] - a[1]) * 110540;
+        const px = (pt[0] - a[0]) * 111320 * this.cosLat;
+        const py = (pt[1] - a[1]) * 110540;
+        const t = Math.max(0, Math.min(1, (px * bx + py * by) / (bx * bx + by * by)));
+        const qx = ax + bx * t;
+        const qy = ay + by * t;
+        const d = Math.hypot(px - qx, py - qy);
+        if (d <= maxM && (!best || d < best.distM)) {
+          best = {
+            edge: ei,
+            distM: d,
+            proj: [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t],
+            alongM: along + segLen * t,
+          };
+        }
+        along += segLen;
+      }
+    }
+    if (!best) return null;
+
+    const e = this.pack.edges[best.edge];
+    // snap to an endpoint if the projection is basically on it
+    if (best.alongM < 12) return e.a;
+    if (e.lenM - best.alongM < 12) return e.b;
+
+    // split the edge at the projection
+    const chain: LngLat[] = [this.pack.nodes[e.a], ...e.pts, this.pack.nodes[e.b]];
+    const ptsA: LngLat[] = [];
+    const ptsB: LngLat[] = [];
+    let along = 0;
+    let placed = false;
+    for (let s = 0; s < chain.length - 1; s++) {
+      const a = chain[s];
+      const b = chain[s + 1];
+      const segLen = fastDistM(a, b, this.cosLat);
+      if (!placed && along + segLen >= best.alongM - 0.01) {
+        placed = true;
+      } else if (!placed) {
+        ptsA.push(b);
+      } else {
+        ptsB.push(a);
+      }
+      along += segLen;
+    }
+    // ptsA: interior points before the split; ptsB: interior points after
+    // (the loop above collects b's before the split segment and a's after it)
+    const newNode = this.pack.nodes.length;
+    this.pack.nodes.push([best.proj[0], best.proj[1]]);
+    const lenA = Math.max(1, Math.round(best.alongM));
+    const lenB = Math.max(1, Math.round(e.lenM - best.alongM));
+    const oldB = e.b;
+    const edgeIdx = best.edge;
+    // reuse the original edge slot for the first half (keeps other indexes valid)
+    e.b = newNode;
+    e.pts = ptsA;
+    e.lenM = lenA;
+    const newEdgeIdx = this.pack.edges.length;
+    this.pack.edges.push({ a: newNode, b: oldB, lenM: lenB, kmh: e.kmh, pts: ptsB });
+
+    // incremental index update (full rebuilds are too slow on real cities)
+    this.adj.push([]);
+    const adjA = this.adj[e.a];
+    const entA = adjA.find((x) => x.edge === edgeIdx);
+    if (entA) {
+      entA.to = newNode;
+      entA.lenM = lenA;
+    }
+    this.adj[oldB] = this.adj[oldB].filter((x) => x.edge !== edgeIdx);
+    this.adj[oldB].push({ to: newNode, edge: newEdgeIdx, lenM: lenB });
+    this.adj[newNode].push({ to: e.a, edge: edgeIdx, lenM: lenA });
+    this.adj[newNode].push({ to: oldB, edge: newEdgeIdx, lenM: lenB });
+    this.grid.add(this.pack.nodes[newNode], newNode);
+    this.indexEdge(newEdgeIdx);
+    // stale samples for the shortened edge still resolve correctly: they
+    // project onto its (clamped) remaining extent while the new edge has
+    // fresh samples of its own.
+    return newNode;
   }
 
   /** A* over edge lengths; returns full coordinate path including shape points */

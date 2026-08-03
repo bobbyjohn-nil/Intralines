@@ -261,6 +261,19 @@ export const useGame = create<GameState>((set, get) => {
         try {
           const sv = JSON.parse(saved) as SaveGame;
           if (sv.version === SAVE_VERSION && sv.cityId === pack.meta.id) {
+            // node indexes don't survive across sessions (stops may split
+            // streets); re-anchor each saved stop into the fresh graph
+            for (const st of sv.stops) {
+              const node = graph.insertStopNode(st.pt, 240);
+              if (node !== null) {
+                st.node = node;
+                st.pt = graph.pack.nodes[node];
+              }
+            }
+            if (sv.depot) {
+              const dn = graph.nearestNode(sv.depot.pt, 400);
+              if (dn !== null) sv.depot.node = dn;
+            }
             base = {
               cash: sv.cash,
               clockMin: sv.clockMin,
@@ -425,22 +438,30 @@ export const useGame = create<GameState>((set, get) => {
       }
 
       if (s.tool === 'line-new' && s.draft) {
-        const node = s.graph.nearestNode(pt, 260);
-        if (node === null) {
-          get().notify('Too far from a road — click closer to a street.', 'bad');
-          return;
-        }
         const cosLat = Math.cos((s.pack.meta.center[1] * Math.PI) / 180);
         // reuse an existing stop if the click is basically on it
         let stop: Stop | null = null;
         for (const ex of [...s.stops, ...s.draft.stops]) {
-          if (fastDistM(ex.pt, s.pack.nodes[node] ?? pt, cosLat) < 40 || ex.node === node) {
+          if (fastDistM(ex.pt, pt, cosLat) < 35) {
             stop = ex;
             break;
           }
         }
         if (!stop) {
-          stop = {
+          // project the click onto the street itself — stops land exactly
+          // where you put them, mid-block included
+          const node = s.graph.insertStopNode(pt, 240);
+          if (node === null) {
+            get().notify('Too far from a road — click closer to a street.', 'bad');
+            return;
+          }
+          for (const ex of [...s.stops, ...s.draft.stops]) {
+            if (ex.node === node) {
+              stop = ex;
+              break;
+            }
+          }
+          stop ??= {
             id: `s${stopSeq++}`,
             name: `Stop ${stopSeq}`,
             node,

@@ -6,10 +6,16 @@ import { DWELL_SEC, LAYOVER_MIN, trafficFactor } from '../game/constants';
 import { busModel } from '../game/store';
 import { pointAlong } from '../game/routing';
 
-// The living-city layer: low-poly 3D buses that ease in and out of stops,
-// pause at lights, crawl through rush hour and light up at night — plus
-// little pedestrians walking to busy stops. Everything is a deterministic
-// function of the game clock, so no per-frame simulation messages are needed.
+// The living-city layer. Buses move with real kinematics (constant
+// acceleration up, braking down, cruise in between) and come to a full stop
+// at lights and in traffic. Passengers are persistent little agents: they
+// spawn from randomized origins at the rate the demand model predicts, walk
+// to their stop, wait there — visibly lingering — and board when a bus
+// actually pulls in. Bus schedules stay a pure function of the game clock.
+
+const BUS_ACCEL = 1.1; // m/s²
+const BUS_DECEL = 1.3; // m/s²
+const KINE_K = 1 / (2 * BUS_ACCEL) + 1 / (2 * BUS_DECEL);
 
 interface DriveSeg {
   t0: number;
@@ -29,21 +35,37 @@ interface LineAnim {
   line: BusLine;
   vehicles: number;
   headwayEff: number;
-  segs: DriveSeg[]; // one outbound run, dwells included
+  segs: DriveSeg[];
   outboundMin: number;
   cycleMin: number;
   meshes: THREE.Group[];
   seed: number;
 }
 
-interface StopDemand {
+interface StopSite {
+  id: string;
   pt: LngLat;
-  hourly: number[]; // boardings/hour arriving at this stop
+  x: number;
+  z: number;
+  hourly: number[];
 }
 
-const WALKER_POOL = 110;
-const WALK_SPEED_M_PER_MIN = 82;
+const AGENT_POOL = 130;
+const PER_STOP_CAP = 12;
+const GIVE_UP_MIN = 45;
 const WALKER_COLORS = [0x8d6e63, 0x5c6bc0, 0x6d8b74, 0xb0716a, 0x7e7a9a, 0x936f4f];
+
+interface Agent {
+  state: 'free' | 'walking' | 'waiting';
+  site: number;
+  sx: number;
+  sz: number;
+  startClock: number;
+  walkDur: number;
+  waitDx: number;
+  waitDz: number;
+  waitSince: number;
+}
 
 function hash32(x: number): number {
   x |= 0;
@@ -52,14 +74,39 @@ function hash32(x: number): number {
   return (x ^ (x >>> 16)) >>> 0;
 }
 
-/** deterministic 0..1 from a list of ints */
 function rand01(...keys: number[]): number {
   let h = 0x9e3779b9;
   for (const k of keys) h = hash32(h ^ (k | 0));
   return h / 4294967296;
 }
 
-const easeInOut = (u: number): number => u * u * (3 - 2 * u);
+/**
+ * Position after t seconds on a run of D meters lasting T seconds, starting
+ * and ending at rest: accelerate at BUS_ACCEL, cruise, brake at BUS_DECEL.
+ * Falls back to a triangular profile when the timetable is tighter than the
+ * physics allows (very short hops).
+ */
+function kinematicDist(D: number, T: number, t: number): number {
+  if (T <= 0.01 || D <= 0.01) return t >= T ? D : 0;
+  t = Math.max(0, Math.min(t, T));
+  const disc = T * T - 4 * KINE_K * D;
+  if (disc >= 0) {
+    const vc = (T - Math.sqrt(disc)) / (2 * KINE_K);
+    const ta = vc / BUS_ACCEL;
+    const td = vc / BUS_DECEL;
+    if (t <= ta) return 0.5 * BUS_ACCEL * t * t;
+    if (t >= T - td) {
+      const r = T - t;
+      return D - 0.5 * BUS_DECEL * r * r;
+    }
+    return 0.5 * BUS_ACCEL * ta * ta + vc * (t - ta);
+  }
+  const half = T / 2;
+  const a2 = (2 * D) / T / half;
+  if (t <= half) return 0.5 * a2 * t * t;
+  const r = T - t;
+  return D - 0.5 * a2 * r * r;
+}
 
 export class BusLayer3D implements CustomLayerInterface {
   id = 'buses-3d';
@@ -79,12 +126,12 @@ export class BusLayer3D implements CustomLayerInterface {
   private sun = new THREE.DirectionalLight(0xffffff, 1.6);
   private pendingNetwork: { lines: BusLine[]; stats: LineStats[]; stops: Stop[] } | null = null;
 
-  // pedestrians
-  private stopDemand: StopDemand[] = [];
-  private walkerMeshes: THREE.Group[] = [];
-  private walkerWeightsHour = -1;
-  private walkerCum: number[] = [];
-  private walkerTotal = 0;
+  // passengers
+  private sites: StopSite[] = [];
+  private lastServed = new Map<string, number>(); // stopId -> game clock min
+  private agents: Agent[] = [];
+  private agentMeshes: THREE.Group[] = [];
+  private prevClock = -1;
 
   /** last-rendered vehicle states, for tests/debugging */
   lastFrame: { line: string; k: number; pt: LngLat | null; visible: boolean }[] = [];
@@ -109,11 +156,15 @@ export class BusLayer3D implements CustomLayerInterface {
     this.sun.position.set(400, 900, 300);
     this.scene.add(this.ambient);
     this.scene.add(this.sun);
-    for (let i = 0; i < WALKER_POOL; i++) {
+    for (let i = 0; i < AGENT_POOL; i++) {
       const w = makeWalkerMesh(WALKER_COLORS[i % WALKER_COLORS.length]);
       w.visible = false;
       this.scene.add(w);
-      this.walkerMeshes.push(w);
+      this.agentMeshes.push(w);
+      this.agents.push({
+        state: 'free', site: 0, sx: 0, sz: 0, startClock: 0, walkDur: 1,
+        waitDx: 0, waitDz: 0, waitSince: 0,
+      });
     }
     if (this.pendingNetwork) {
       const { lines, stats, stops } = this.pendingNetwork;
@@ -124,12 +175,12 @@ export class BusLayer3D implements CustomLayerInterface {
 
   onRemove(): void {
     this.anims.forEach((a) => a.meshes.forEach((m) => this.scene.remove(m)));
-    this.walkerMeshes.forEach((m) => this.scene.remove(m));
+    this.agentMeshes.forEach((m) => this.scene.remove(m));
     this.anims = [];
-    this.walkerMeshes = [];
+    this.agentMeshes = [];
+    this.agents = [];
   }
 
-  /** hour 0..24 -> 0 = deep night, 1 = full day */
   private dayFactor(hour: number): number {
     return hour < 5 || hour >= 21 ? 0 :
       hour < 7 ? (hour - 5) / 2 :
@@ -153,7 +204,7 @@ export class BusLayer3D implements CustomLayerInterface {
     this.anims.forEach((a) => a.meshes.forEach((m) => this.scene.remove(m)));
     this.anims = [];
 
-    // per-stop demand for pedestrian spawning
+    // stop demand sites for passenger spawning + live counts
     const rate = new Map<string, number[]>();
     for (const line of lines) {
       const st = stats.find((s) => s.lineId === line.id);
@@ -165,17 +216,32 @@ export class BusLayer3D implements CustomLayerInterface {
         rate.set(sid, arr);
       }
     }
-    this.stopDemand = stops
+    // capture which stop each live agent belongs to BEFORE replacing sites
+    const oldIds = this.agentSiteIds;
+    this.sites = stops
       .filter((s) => rate.has(s.id))
-      .map((s) => ({ pt: s.pt, hourly: rate.get(s.id)! }));
-    this.walkerWeightsHour = -1; // force weight rebuild
+      .map((s) => {
+        const { x, z } = this.toLocal(s.pt);
+        return { id: s.id, pt: s.pt, x, z, hourly: rate.get(s.id)! };
+      });
+    // agents keep waiting across network edits when their stop survives
+    const alive = new Set(this.sites.map((s) => s.id));
+    const siteIdx = new Map(this.sites.map((s, i) => [s.id, i]));
+    this.agents.forEach((a, i) => {
+      if (a.state === 'free') return;
+      const sid = oldIds[i];
+      if (sid && alive.has(sid)) {
+        a.site = siteIdx.get(sid)!;
+      } else {
+        a.state = 'free';
+        this.agentMeshes[i].visible = false;
+      }
+    });
 
     for (const line of lines) {
       const st = stats.find((s) => s.lineId === line.id);
       if (!st || !line.active || st.vehiclesUsed <= 0 || line.path.length < 2) continue;
       const model = busModel(line.modelId);
-
-      // outbound time profile: drive segments (eased) + dwells at stops
       const segs: DriveSeg[] = [];
       let t = 0;
       for (let i = 1; i < line.stopIds.length; i++) {
@@ -212,52 +278,68 @@ export class BusLayer3D implements CustomLayerInterface {
     this.map?.triggerRepaint();
   }
 
+  private get agentSiteIds(): (string | null)[] {
+    return this.agents.map((a) =>
+      a.state === 'free' ? null : this.sites[a.site]?.id ?? null,
+    );
+  }
+
   /**
-   * Distance along one outbound run at profile-time t, with eased stop
-   * approaches and deterministic "red light / traffic" holds inside drive
-   * segments. Holds get longer as congestion rises.
+   * Distance along one outbound run at profile-time t. Drive segments use
+   * real accelerate/cruise/brake physics; deterministic traffic holds split a
+   * segment into sub-runs with a full stop (brake, wait, pull away) between.
    */
   private outboundDist(a: LineAnim, t: number, cycleIdx: number, veh: number, congestion: number): number {
     for (let i = 0; i < a.segs.length; i++) {
       const s = a.segs[i];
       if (t > s.t1) continue;
       if (!s.drive) return s.d0;
-      let u = (t - s.t0) / Math.max(s.t1 - s.t0, 1e-6);
+      const D = s.d1 - s.d0;
+      const Tmin = s.t1 - s.t0;
+      const tIn = t - s.t0;
 
-      // up to 2 holds per segment; probability and length scale with traffic
+      // deterministic holds (red lights / traffic), heavier at rush hour
       const jam = Math.max(0, congestion - 0.95);
-      let holdTotal = 0;
-      const holds: { at: number; len: number }[] = [];
+      const holds: { p: number; frac: number }[] = [];
+      let holdFrac = 0;
       for (let hIdx = 0; hIdx < 2; hIdx++) {
         const roll = rand01(a.seed, veh, cycleIdx, i, hIdx);
         if (roll < 0.18 + jam * 0.9) {
-          const at = 0.15 + 0.7 * rand01(a.seed, veh, cycleIdx, i, hIdx + 10);
-          const len = (0.04 + 0.1 * rand01(a.seed, veh, cycleIdx, i, hIdx + 20)) * (1 + jam);
-          holds.push({ at, len });
-          holdTotal += len;
+          const p = 0.18 + 0.64 * rand01(a.seed, veh, cycleIdx, i, hIdx + 10);
+          const frac = (0.05 + 0.11 * rand01(a.seed, veh, cycleIdx, i, hIdx + 20)) * (1 + jam);
+          holds.push({ p, frac });
+          holdFrac += frac;
         }
       }
-      if (holdTotal > 0.45) {
-        const f = 0.45 / holdTotal;
-        holds.forEach((h) => (h.len *= f));
-        holdTotal = 0.45;
+      if (holdFrac > 0.45) {
+        const f = 0.45 / holdFrac;
+        holds.forEach((h) => (h.frac *= f));
+        holdFrac = 0.45;
       }
-      // warp time-fraction u so the bus freezes during holds
-      let moved = 0;
-      let cursor = 0;
-      holds.sort((x, y) => x.at - y.at);
-      for (const h of holds) {
-        const start = Math.max(h.at, cursor); // ignore overlap with prior hold
-        if (u <= start) break;
-        moved += Math.min(u, start) - cursor;
-        cursor = start;
-        const inHold = Math.min(u - start, h.len);
-        cursor += inHold; // time passes, no movement
-        if (u <= start + h.len) break;
+      holds.sort((x, y) => x.p - y.p);
+
+      // build sub-legs: drive, stop, drive, ... with time ∝ distance
+      const Tsec = Tmin * 60;
+      const driveSec = Tsec * (1 - holdFrac);
+      const cuts = [0, ...holds.map((h) => h.p), 1];
+      let acc = s.d0;
+      let cursorSec = 0;
+      const tSec = Math.max(0, Math.min(tIn * 60, Tsec));
+      for (let leg = 0; leg < cuts.length - 1; leg++) {
+        const legD = (cuts[leg + 1] - cuts[leg]) * D;
+        const legT = driveSec * ((cuts[leg + 1] - cuts[leg]) || 0);
+        if (tSec <= cursorSec + legT || leg === cuts.length - 2) {
+          return acc + kinematicDist(legD, legT, tSec - cursorSec);
+        }
+        cursorSec += legT;
+        acc += legD;
+        if (leg < holds.length) {
+          const holdSec = holds[leg].frac * Tsec;
+          if (tSec <= cursorSec + holdSec) return acc; // stopped at the light
+          cursorSec += holdSec;
+        }
       }
-      if (u > cursor) moved += u - cursor;
-      const uEff = Math.min(moved / Math.max(1 - holdTotal, 0.55), 1);
-      return s.d0 + (s.d1 - s.d0) * easeInOut(uEff);
+      return s.d1;
     }
     return a.line.pathLenM;
   }
@@ -281,7 +363,6 @@ export class BusLayer3D implements CustomLayerInterface {
     return null;
   }
 
-  /** heading that looks 8m ahead so corners are rounded, not snapped */
   private smoothBearing(line: BusLine, d: number, forward: boolean): { pt: LngLat; bearing: number } {
     const { pt } = pointAlong(line.path, line.cum, d);
     const ahead = forward ? Math.min(d + 8, line.pathLenM) : Math.max(d - 8, 0);
@@ -304,10 +385,28 @@ export class BusLayer3D implements CustomLayerInterface {
     };
   }
 
+  /** live waiting-passenger estimate per stop (drives both chips and agents) */
+  private waitingCount(site: StopSite, clock: number, hourInt: number): number {
+    const rate = site.hourly[hourInt] ?? 0;
+    if (rate <= 0.2) return 0;
+    const last = this.lastServed.get(site.id) ?? clock - 6;
+    return Math.min((rate / 60) * Math.max(clock - last, 0), 60);
+  }
+
+  getStopCounts(): { id: string; pt: LngLat; count: number }[] {
+    const clock = this.getClockMin();
+    const dayMin = ((clock % 1440) + 1440) % 1440;
+    const hourInt = Math.floor(dayMin / 60) % 24;
+    return this.sites
+      .map((s) => ({ id: s.id, pt: s.pt, count: Math.round(this.waitingCount(s, clock, hourInt)) }))
+      .filter((s) => s.count >= 1);
+  }
+
   render(_gl: WebGLRenderingContext, matrix: unknown): void {
     const clock = this.getClockMin();
     const dayMin = ((clock % 1440) + 1440) % 1440;
     const hour = dayMin / 60;
+    const hourInt = Math.floor(hour) % 24;
     const day = this.dayFactor(hour);
     const congestion = trafficFactor(hour);
     this.setDaylight(day);
@@ -315,12 +414,13 @@ export class BusLayer3D implements CustomLayerInterface {
     const mPerPx = (156543.03392 * this.cosLat) / Math.pow(2, zoom);
     const busScale = Math.min(Math.max((22 * mPerPx) / 11, 1.15), 26);
 
+    const servedNow = new Set<string>();
     this.lastFrame = [];
     for (const a of this.anims) {
       const { line } = a;
       const svcStart = line.firstHour * 60;
       const svcEnd = line.lastHour * 60;
-      const cycleEff = a.cycleMin * congestion; // rush hour stretches trips
+      const cycleEff = a.cycleMin * congestion;
       for (let k = 0; k < a.vehicles; k++) {
         const mesh = a.meshes[k];
         const firstDep = svcStart + k * a.headwayEff;
@@ -344,6 +444,13 @@ export class BusLayer3D implements CustomLayerInterface {
               applyBusLighting(mesh, day);
               visible = true;
               seenPt = pt;
+              // is this bus at (or basically at) one of its stops?
+              for (let si = 0; si < line.stopDist.length; si++) {
+                if (Math.abs(pos.d - line.stopDist[si]) < 25) {
+                  servedNow.add(line.stopIds[si]);
+                  break;
+                }
+              }
             }
           }
         }
@@ -351,8 +458,9 @@ export class BusLayer3D implements CustomLayerInterface {
         this.lastFrame.push({ line: line.id, k, pt: seenPt, visible });
       }
     }
+    for (const sid of servedNow) this.lastServed.set(sid, clock);
 
-    this.renderWalkers(clock, dayMin, zoom, mPerPx);
+    this.updatePassengers(clock, hourInt, servedNow, zoom, mPerPx);
 
     const m = new THREE.Matrix4().fromArray(Array.from(matrix as ArrayLike<number>));
     const l = new THREE.Matrix4()
@@ -362,73 +470,95 @@ export class BusLayer3D implements CustomLayerInterface {
     this.camera.projectionMatrix = m.multiply(l);
     this.renderer.resetState();
     this.renderer.render(this.scene, this.camera);
-    if (this.anims.length || this.stopDemand.length) this.map.triggerRepaint();
+    if (this.anims.length || this.sites.length) this.map.triggerRepaint();
   }
 
-  /** pedestrians streaming to stops, more of them where and when demand is high */
-  private renderWalkers(clock: number, dayMin: number, zoom: number, mPerPx: number): void {
-    const hourInt = Math.floor(dayMin / 60) % 24;
-    if (!this.stopDemand.length || zoom < 13.8) {
-      this.walkerMeshes.forEach((m) => (m.visible = false));
-      return;
-    }
-    if (hourInt !== this.walkerWeightsHour) {
-      this.walkerWeightsHour = hourInt;
-      this.walkerCum = [];
-      let acc = 0;
-      for (const sd of this.stopDemand) {
-        acc += sd.hourly[hourInt];
-        this.walkerCum.push(acc);
-      }
-      this.walkerTotal = acc;
-    }
-    const active =
-      this.walkerTotal <= 0.5
-        ? 0
-        : Math.min(WALKER_POOL, Math.max(8, Math.round(this.walkerTotal / 4)));
+  /** persistent pedestrians: spawn → walk in → linger at the stop → board */
+  private updatePassengers(
+    clock: number, hourInt: number, servedNow: Set<string>, zoom: number, mPerPx: number,
+  ): void {
+    const dt = this.prevClock < 0 ? 0 : Math.max(0, Math.min(clock - this.prevClock, 30));
+    this.prevClock = clock;
     const scale = Math.min(Math.max((7 * mPerPx) / 1.7, 1), 12);
-    const epoch = hourInt; // re-seed hourly so crowds follow demand
+    const show = zoom >= 13.6 && this.sites.length > 0;
 
-    for (let i = 0; i < this.walkerMeshes.length; i++) {
-      const mesh = this.walkerMeshes[i];
-      if (i >= active) {
+    // how many agents are already headed to / waiting at each site
+    const perSite = new Array<number>(this.sites.length).fill(0);
+    for (const a of this.agents) {
+      if (a.state !== 'free') perSite[a.site]++;
+    }
+
+    // spawn where the live waiting estimate outruns the visible crowd
+    for (let si = 0; si < this.sites.length && dt > 0; si++) {
+      const want = Math.min(
+        Math.round(this.waitingCount(this.sites[si], clock, hourInt)),
+        PER_STOP_CAP,
+      );
+      if (perSite[si] >= want) continue;
+      const free = this.agents.findIndex((a) => a.state === 'free');
+      if (free === -1) break;
+      const a = this.agents[free];
+      const site = this.sites[si];
+      const ang = Math.random() * Math.PI * 2; // randomized origins
+      const dist = 45 + Math.random() * 125;
+      a.state = 'walking';
+      a.site = si;
+      a.sx = site.x + Math.cos(ang) * dist;
+      a.sz = site.z + Math.sin(ang) * dist;
+      a.startClock = clock;
+      a.walkDur = dist / (66 + Math.random() * 30); // m/min, varied gait
+      const waitAng = Math.random() * Math.PI * 2;
+      const waitR = 2.5 + Math.random() * 4.5;
+      a.waitDx = Math.cos(waitAng) * waitR;
+      a.waitDz = Math.sin(waitAng) * waitR;
+      perSite[si]++;
+    }
+
+    for (let i = 0; i < this.agents.length; i++) {
+      const a = this.agents[i];
+      const mesh = this.agentMeshes[i];
+      if (a.state === 'free') {
         mesh.visible = false;
         continue;
       }
-      // pick a stop weighted by demand
-      const pickR = rand01(i, epoch, 1) * this.walkerTotal;
-      let si = 0;
-      while (si < this.walkerCum.length - 1 && this.walkerCum[si] < pickR) si++;
-      const stop = this.stopDemand[si];
-
-      const ang = rand01(i, epoch, 2) * Math.PI * 2;
-      const distM = 55 + rand01(i, epoch, 3) * 90;
-      const walkMin = distM / WALK_SPEED_M_PER_MIN;
-      const cycle = walkMin + 0.5; // walk, wait a moment at the stop, respawn
-      const phase = rand01(i, epoch, 4) * cycle;
-      const tW = (clock / 1 + phase) % cycle;
-
-      const target = this.toLocal(stop.pt);
-      const sx = target.x + Math.cos(ang) * distM;
-      const sz = target.z + Math.sin(ang) * distM;
-      let x: number;
-      let z: number;
-      if (tW < walkMin) {
-        const f = tW / walkMin;
-        x = sx + (target.x - sx) * f;
-        z = sz + (target.z - sz) * f;
-        mesh.rotation.y = Math.atan2(target.x - sx, target.z - sz);
-        // a little bob while walking (scaled so it stays proportional)
-        mesh.position.y = Math.abs(Math.sin(tW * 220)) * 0.16 * scale;
-      } else {
-        x = target.x + Math.cos(ang) * 3.5 * Math.min(scale, 3); // waiting beside the stop
-        z = target.z + Math.sin(ang) * 3.5 * Math.min(scale, 3);
-        mesh.position.y = 0;
+      const site = this.sites[a.site];
+      if (!site) {
+        a.state = 'free';
+        mesh.visible = false;
+        continue;
       }
-      mesh.position.x = x;
-      mesh.position.z = z;
+
+      if (a.state === 'walking') {
+        const f = Math.min((clock - a.startClock) / a.walkDur, 1);
+        const tx = site.x + a.waitDx;
+        const tz = site.z + a.waitDz;
+        mesh.position.x = a.sx + (tx - a.sx) * f;
+        mesh.position.z = a.sz + (tz - a.sz) * f;
+        mesh.position.y = Math.abs(Math.sin((clock - a.startClock) * 220)) * 0.16 * scale;
+        mesh.rotation.y = Math.atan2(tx - a.sx, tz - a.sz);
+        if (f >= 1) {
+          a.state = 'waiting';
+          a.waitSince = clock;
+        }
+      } else {
+        // waiting: linger beside the stop, occasionally shifting weight
+        mesh.position.x = site.x + a.waitDx;
+        mesh.position.z = site.z + a.waitDz;
+        mesh.position.y = Math.abs(Math.sin(clock * 3 + i)) * 0.02 * scale;
+        mesh.rotation.y = Math.atan2(site.x - mesh.position.x, site.z - mesh.position.z);
+        if (servedNow.has(site.id) && clock - a.waitSince > 0.15) {
+          a.state = 'free'; // boards the bus
+          mesh.visible = false;
+          continue;
+        }
+        if (clock - a.waitSince > GIVE_UP_MIN) {
+          a.state = 'free'; // gave up on this line
+          mesh.visible = false;
+          continue;
+        }
+      }
       mesh.scale.setScalar(scale);
-      mesh.visible = true;
+      mesh.visible = show;
     }
   }
 }
