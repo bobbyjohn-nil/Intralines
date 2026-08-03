@@ -9,6 +9,26 @@ every route.
 
 ## Play
 
+**As a desktop app** (its own window, no browser):
+
+```bash
+npm install
+npm run app
+```
+
+To make a double-clickable installer (DMG on Mac, one-click installer on Windows,
+AppImage on Linux):
+
+```bash
+npm run dist       # output lands in release/
+```
+
+The installer is unsigned, so macOS Gatekeeper will warn on first launch — right-click the
+app → Open. After installing, the game lives in your Applications/Start Menu like any other
+app and no terminal is needed again.
+
+**Or in the browser:**
+
 ```bash
 npm install
 npm run dev        # open http://localhost:5173
@@ -72,6 +92,8 @@ The same idea as Subway Builder, scaled to buses:
 scripts/
   make-demo-city.mjs    procedural Riverton generator (deterministic)
   bake-city.mjs         Node pipeline: census + OSM -> public/cities/<id>.json
+electron/
+  main.cjs              desktop shell: serves dist/ over app:// in an Electron window
 src/
   game/
     types.ts            CityPack + player-state types

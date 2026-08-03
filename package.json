@@ -3,12 +3,41 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
+  "main": "electron/main.cjs",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
+    "app": "npm run build && electron .",
+    "dist": "npm run build && electron-builder",
     "demo-city": "node scripts/make-demo-city.mjs",
     "bake": "node scripts/bake-city.mjs"
+  },
+  "build": {
+    "appId": "com.transitlines.game",
+    "productName": "Transit Lines",
+    "files": [
+      "dist/**",
+      "electron/**"
+    ],
+    "directories": {
+      "output": "release"
+    },
+    "mac": {
+      "target": "dmg",
+      "category": "public.app-category.games"
+    },
+    "win": {
+      "target": "nsis"
+    },
+    "nsis": {
+      "oneClick": true,
+      "runAfterFinish": true
+    },
+    "linux": {
+      "target": "AppImage",
+      "category": "Game"
+    }
   },
   "dependencies": {
     "maplibre-gl": "^4.7.1",
@@ -22,6 +51,8 @@
     "@types/react-dom": "^18.3.1",
     "@types/three": "^0.169.0",
     "@vitejs/plugin-react": "^4.3.2",
+    "electron": "^33.4.11",
+    "electron-builder": "^25.1.8",
     "playwright": "^1.62.1",
     "typescript": "^5.6.3",
     "vite": "^5.4.9"
