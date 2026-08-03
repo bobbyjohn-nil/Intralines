@@ -352,7 +352,7 @@ export const useGame = create<GameState>((set, get) => {
       const newTotal = prevTotal + dRiders;
       for (const m of BUS_MODELS) {
         if (m.unlockRiders > 0 && prevTotal < m.unlockRiders && newTotal >= m.unlockRiders) {
-          get().notify(`${m.emoji} ${m.name} unlocked! Check the Fleet panel.`, 'good');
+          get().notify(`${m.name} unlocked — check the Fleet panel.`, 'good');
         }
       }
 

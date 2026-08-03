@@ -1,8 +1,13 @@
 import { useGame } from '../game/store';
 import type { Panel } from '../game/store';
+import {
+  IconBus, IconChart, IconDepot, IconGlobe, IconHeat, IconHelp, IconMapFold,
+  IconPeople, IconPlus, IconPointer, IconRoute,
+} from './icons';
 
-const HEAT_LABEL = { off: 'Heatmap off', pop: 'Residents', jobs: 'Jobs' } as const;
+const HEAT_LABEL = { off: 'Off', pop: 'People', jobs: 'Jobs' } as const;
 
+/** the horizontal command dock along the bottom of the screen */
 export function Toolbar() {
   const tool = useGame((s) => s.tool);
   const setTool = useGame((s) => s.setTool);
@@ -21,67 +26,102 @@ export function Toolbar() {
     setHeatmap(heatmap === 'off' ? 'pop' : heatmap === 'pop' ? 'jobs' : 'off');
 
   return (
-    <div className="toolbar">
+    <div className="dock">
       <button
         className={tool === 'select' ? 'on' : ''}
         onClick={() => setTool('select')}
-        title="Select / pan (Esc)"
+        title="Select and pan the map (Esc)"
       >
-        🖐
+        <IconPointer />
+        <span>Select</span>
       </button>
       <button
         className={tool === 'line-new' ? 'on' : ''}
         onClick={() => setTool('line-new')}
-        title="Draw a new bus line"
+        title="Draw a new bus line along streets"
       >
-        ➕
+        <IconPlus />
+        <span>New line</span>
       </button>
       {!depot && (
         <button
           className={`pulse ${tool === 'depot-place' ? 'on' : ''}`}
           onClick={() => setTool('depot-place')}
-          title="Place your depot"
+          title="Place your depot — every bus needs a home"
         >
-          🏗
+          <IconDepot />
+          <span>Place depot</span>
         </button>
       )}
       <button
         className={heatmap !== 'off' ? 'on' : ''}
         onClick={cycleHeat}
-        title={`Demand heatmap: ${HEAT_LABEL[heatmap]} (click to cycle)`}
+        title="Cycle the census demand heatmap: residents, jobs, off"
       >
-        {heatmap === 'jobs' ? '💼' : '🌡'}
+        <IconHeat />
+        <span>Heatmap · {HEAT_LABEL[heatmap]}</span>
       </button>
       {pack?.meta.kind === 'real' && (
         <button
           onClick={toggleBasemap}
           title={
             basemapPref === 'offline'
-              ? 'Basemap: offline (built-in map, no internet used) — click for online tiles'
-              : `Basemap: auto (currently ${basemapActive}) — click to force offline`
+              ? 'Built-in offline map (no internet used) — click for online tiles'
+              : `Auto basemap, currently ${basemapActive} — click to force offline`
           }
         >
-          {basemapPref === 'offline' ? '🗺' : '🌐'}
+          {basemapPref === 'offline' ? <IconMapFold /> : <IconGlobe />}
+          <span>Map · {basemapPref === 'offline' ? 'Offline' : 'Auto'}</span>
         </button>
       )}
-      <div className="toolbar-sep" />
-      <button className={panel === 'lines' ? 'on' : ''} onClick={() => togglePanel('lines')} title="Lines">
-        🚏
+      <div className="dock-sep" />
+      <button
+        className={panel === 'lines' || panel === 'line-edit' ? 'on' : ''}
+        onClick={() => togglePanel('lines')}
+        title="Your bus lines"
+      >
+        <IconRoute />
+        <span>Lines</span>
       </button>
-      <button className={panel === 'fleet' ? 'on' : ''} onClick={() => togglePanel('fleet')} title="Fleet">
-        🚌
+      <button
+        className={panel === 'fleet' ? 'on' : ''}
+        onClick={() => togglePanel('fleet')}
+        title="Buy and sell buses"
+      >
+        <IconBus />
+        <span>Fleet</span>
       </button>
-      <button className={panel === 'staff' ? 'on' : ''} onClick={() => togglePanel('staff')} title="Staff">
-        👷
+      <button
+        className={panel === 'staff' ? 'on' : ''}
+        onClick={() => togglePanel('staff')}
+        title="Drivers and mechanics"
+      >
+        <IconPeople />
+        <span>Staff</span>
       </button>
-      <button className={panel === 'depot' ? 'on' : ''} onClick={() => togglePanel('depot')} title="Depot">
-        🏢
+      <button
+        className={panel === 'depot' ? 'on' : ''}
+        onClick={() => togglePanel('depot')}
+        title="Depot upgrades"
+      >
+        <IconDepot />
+        <span>Depot</span>
       </button>
-      <button className={panel === 'finance' ? 'on' : ''} onClick={() => togglePanel('finance')} title="Finances">
-        📈
+      <button
+        className={panel === 'finance' ? 'on' : ''}
+        onClick={() => togglePanel('finance')}
+        title="Cash flow, loan, save files"
+      >
+        <IconChart />
+        <span>Finance</span>
       </button>
-      <button className={panel === 'help' ? 'on' : ''} onClick={() => togglePanel('help')} title="How to play">
-        ❓
+      <button
+        className={panel === 'help' ? 'on' : ''}
+        onClick={() => togglePanel('help')}
+        title="How to play"
+      >
+        <IconHelp />
+        <span>Help</span>
       </button>
     </div>
   );

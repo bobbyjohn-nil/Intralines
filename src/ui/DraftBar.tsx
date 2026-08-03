@@ -1,4 +1,5 @@
 import { useGame } from '../game/store';
+import { IconCheck, IconClose, IconUndo } from './icons';
 
 /** floating helper bar while drawing a line or placing the depot */
 export function DraftBar() {
@@ -12,7 +13,7 @@ export function DraftBar() {
   if (tool === 'depot-place') {
     return (
       <div className="draftbar">
-        <span>🏗 Click near a street to place your depot</span>
+        <span>Click near a street to place your depot</span>
         <button className="btn" onClick={() => setTool('select')}>
           Cancel
         </button>
@@ -23,18 +24,18 @@ export function DraftBar() {
   return (
     <div className="draftbar">
       <span>
-        ✏️ {draft.stops.length === 0
+        {draft.stops.length === 0
           ? 'Click a street to place the first stop'
           : `${draft.stops.length} stops — keep clicking, or finish`}
       </span>
-      <button className="btn" onClick={undo} disabled={!draft.stops.length}>
-        ↶
+      <button className="btn with-icon" onClick={undo} disabled={!draft.stops.length}>
+        <IconUndo size={14} /> Undo
       </button>
-      <button className="btn" onClick={cancel}>
-        ✕
+      <button className="btn with-icon" onClick={cancel}>
+        <IconClose size={14} /> Cancel
       </button>
-      <button className="btn primary" onClick={finish} disabled={draft.stops.length < 2}>
-        ✓ Create
+      <button className="btn primary with-icon" onClick={finish} disabled={draft.stops.length < 2}>
+        <IconCheck size={14} /> Create line
       </button>
     </div>
   );

@@ -88,7 +88,10 @@ export interface BusModelSpec {
   /** total riders served needed to unlock */
   unlockRiders: number;
   needsCharger?: boolean;
-  emoji: string;
+  /** short label used on compact buttons */
+  short: string;
+  /** relative silhouette length for icons (1 = standard bus) */
+  lengthFactor: number;
   blurb: string;
 }
 

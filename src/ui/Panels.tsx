@@ -9,6 +9,10 @@ import {
 } from '../game/constants';
 import { fmtInt, fmtMoney } from './format';
 import type { LineStats } from '../game/types';
+import {
+  BusSide, IconBank, IconClose, IconDepot, IconDownload, IconIdBadge, IconLock,
+  IconPlus, IconUpload, IconWrench,
+} from './icons';
 
 export function PanelHost() {
   const panel = useGame((s) => s.panel);
@@ -31,8 +35,8 @@ function PanelTitle({ title }: { title: string }) {
   return (
     <div className="panel-title">
       <h2>{title}</h2>
-      <button className="icon-btn" onClick={() => setPanel('none')}>
-        ✕
+      <button className="icon-btn" onClick={() => setPanel('none')} title="Close">
+        <IconClose size={16} />
       </button>
     </div>
   );
@@ -50,7 +54,8 @@ function LinesPanel() {
       <PanelTitle title="Bus lines" />
       {lines.length === 0 && (
         <p className="hint">
-          No lines yet. Hit <b>➕</b> in the toolbar and click stops along streets to draw one.
+          No lines yet. Hit <b>New line</b> in the bottom bar, then click stops along
+          streets to draw one.
         </p>
       )}
       <div className="list">
@@ -63,7 +68,7 @@ function LinesPanel() {
                 <b>{l.name}</b>
                 <small>
                   {l.stopIds.length} stops · {(l.pathLenM / 1000).toFixed(1)} km ·{' '}
-                  {l.vehicles}🚌
+                  {l.vehicles} {l.vehicles === 1 ? 'bus' : 'buses'}
                 </small>
               </span>
               <span className="row-side">
@@ -76,8 +81,8 @@ function LinesPanel() {
           );
         })}
       </div>
-      <button className="btn primary" onClick={() => setTool('line-new')}>
-        ➕ New line
+      <button className="btn primary with-icon" onClick={() => setTool('line-new')}>
+        <IconPlus size={15} /> New line
       </button>
     </>
   );
@@ -145,10 +150,10 @@ function LineEditPanel() {
               key={m.id}
               className={line.modelId === m.id ? 'on' : ''}
               disabled={fleetOwned(fleet, m.id) === 0 && line.modelId !== m.id}
-              title={`${m.name} — cap ${m.capacity}`}
+              title={`${m.name} — ${m.capacity} riders`}
               onClick={() => updateLine(line.id, { modelId: m.id, vehicles: 0 })}
             >
-              {m.emoji}
+              {m.short}
             </button>
           ))}
         </div>
@@ -174,7 +179,7 @@ function LineEditPanel() {
           >
             +
           </button>
-          <span className="dim">{model.emoji} {freeOfModel} spare</span>
+          <span className="dim">{freeOfModel} spare {model.short.toLowerCase()}</span>
         </div>
       </div>
 
@@ -249,13 +254,13 @@ function LineEditPanel() {
       )}
       {st && line.vehicles < st.vehiclesNeeded && line.active && (
         <p className="warn">
-          ⚠ Only {st.vehiclesUsed} bus{st.vehiclesUsed === 1 ? '' : 'es'} running — headway
+          Only {st.vehiclesUsed} bus{st.vehiclesUsed === 1 ? '' : 'es'} running — headway
           stretches to ~{Math.round(st.headwayEffMin)} min. Assign {st.vehiclesNeeded} for the
           full timetable.
         </p>
       )}
       {st && st.peakLoadFactor > 1 && (
-        <p className="warn">⚠ Overcrowded at rush hour — riders are being left behind.</p>
+        <p className="warn">Overcrowded at rush hour — riders are being left behind.</p>
       )}
 
       <div className="btn-row">
@@ -298,14 +303,14 @@ function DraftPanel() {
       </div>
       <div className="btn-row">
         <button className="btn" onClick={undo} disabled={!draft.stops.length}>
-          ↶ Undo stop
+          Undo stop
         </button>
         <button className="btn danger" onClick={cancel}>
           Cancel
         </button>
       </div>
       <button className="btn primary" onClick={finish} disabled={draft.stops.length < 2}>
-        ✓ Create line
+        Create line
       </button>
     </>
   );
@@ -332,7 +337,7 @@ function FleetPanel() {
           {fleetTotal(fleet)} / {cap || '—'}
         </b>
       </div>
-      {!depot && <p className="warn">⚠ Build a depot first (🏗 in the toolbar).</p>}
+      {!depot && <p className="warn">Build a depot first — use “Place depot” in the bottom bar.</p>}
       <div className="list">
         {BUS_MODELS.map((m) => {
           const owned = fleetOwned(fleet, m.id);
@@ -342,7 +347,7 @@ function FleetPanel() {
           return (
             <div key={m.id} className={`card ${locked ? 'locked' : ''}`}>
               <div className="card-head">
-                <span className="big">{m.emoji}</span>
+                <span className="bus-side"><BusSide length={m.lengthFactor} /></span>
                 <div>
                   <b>{m.name}</b>
                   <small>
@@ -352,8 +357,9 @@ function FleetPanel() {
               </div>
               <p className="blurb">{m.blurb}</p>
               {locked ? (
-                <p className="warn">
-                  🔒 Unlocks at {fmtInt(m.unlockRiders)} riders served ({fmtInt(riders)} so far)
+                <p className="warn with-icon">
+                  <IconLock size={14} /> Unlocks at {fmtInt(m.unlockRiders)} riders served
+                  ({fmtInt(riders)} so far)
                 </p>
               ) : (
                 <div className="btn-row">
@@ -402,7 +408,7 @@ function StaffPanel() {
       <PanelTitle title="Staff" />
       <div className="card">
         <div className="card-head">
-          <span className="big">🧑‍✈️</span>
+          <span className="bus-side"><IconIdBadge size={30} /></span>
           <div>
             <b>Drivers</b>
             <small>${DRIVER_WAGE_PER_HOUR}/h while their bus is in service</small>
@@ -417,12 +423,12 @@ function StaffPanel() {
           </span>
         </div>
         {staff.drivers < needDrivers && (
-          <p className="warn">⚠ Not enough drivers — some buses stay parked.</p>
+          <p className="warn">Not enough drivers — some buses stay parked.</p>
         )}
       </div>
       <div className="card">
         <div className="card-head">
-          <span className="big">🔧</span>
+          <span className="bus-side"><IconWrench size={28} /></span>
           <div>
             <b>Mechanics</b>
             <small>
@@ -437,7 +443,7 @@ function StaffPanel() {
           <span className={staff.mechanics < needMech ? 'bad' : 'dim'}>need {needMech}</span>
         </div>
         {staff.mechanics < needMech && (
-          <p className="warn">⚠ Short on mechanics — running costs +40%.</p>
+          <p className="warn">Short on mechanics — running costs +40%.</p>
         )}
       </div>
     </>
@@ -461,8 +467,8 @@ function DepotPanel() {
           Your company needs a home base. Pick a spot with good street access — every bus
           starts and ends its day here.
         </p>
-        <button className="btn primary" onClick={() => setTool('depot-place')}>
-          🏗 Place depot ({fmtMoney(150000)})
+        <button className="btn primary with-icon" onClick={() => setTool('depot-place')}>
+          <IconDepot size={15} /> Place depot ({fmtMoney(150000)})
         </button>
       </>
     );
@@ -568,13 +574,13 @@ function FinancePanel() {
         spread over the day.
       </p>
       {!loanTaken && (
-        <button className="btn" onClick={takeLoan}>
-          🏦 Take loan: +{fmtMoney(LOAN_AMOUNT)} ({fmtMoney(LOAN_WEEKLY_INTEREST)}/week interest)
+        <button className="btn with-icon" onClick={takeLoan}>
+          <IconBank size={15} /> Take loan: +{fmtMoney(LOAN_AMOUNT)} ({fmtMoney(LOAN_WEEKLY_INTEREST)}/week interest)
         </button>
       )}
       <div className="btn-row">
         <button
-          className="btn"
+          className="btn with-icon"
           onClick={() => {
             const blob = new Blob([exportSave()], { type: 'application/json' });
             const a = document.createElement('a');
@@ -583,10 +589,10 @@ function FinancePanel() {
             a.click();
           }}
         >
-          ⬇ Export save
+          <IconDownload size={15} /> Export save
         </button>
-        <button className="btn" onClick={() => fileRef.current?.click()}>
-          ⬆ Import save
+        <button className="btn with-icon" onClick={() => fileRef.current?.click()}>
+          <IconUpload size={15} /> Import save
         </button>
         <input
           ref={fileRef}
@@ -618,15 +624,16 @@ function HelpPanel() {
       <PanelTitle title="How to play" />
       <ol className="help-list">
         <li>
-          <b>🏗 Place your depot.</b> It's home base for every bus — click the pulsing button,
-          then a spot near a road.
+          <b>Place your depot.</b> It's home base for every bus — hit the pulsing
+          <b> Place depot</b> button in the bottom bar, then click a spot near a road.
         </li>
         <li>
-          <b>🚌 Buy buses</b> in the Fleet panel and <b>👷 hire drivers</b> (one per bus).
+          <b>Buy buses</b> in the Fleet panel and <b>hire drivers</b> in Staff (one per bus).
         </li>
         <li>
-          <b>➕ Draw a line.</b> Click stops along streets — the route snaps to roads. Use the
-          🌡 heatmap: purple = where people live, teal = where they work. Connect the two!
+          <b>Draw a line</b> with <b>New line</b>: click stops along streets — the route snaps
+          to roads. Use the <b>Heatmap</b>: purple shows where people live, teal where they
+          work. Connect the two!
         </li>
         <li>
           <b>Assign buses</b> to the line and tune frequency, hours and fare.
@@ -638,7 +645,8 @@ function HelpPanel() {
       </ol>
       <p className="hint">
         Tilt the map (right-drag or two fingers) to see 3D buildings and your buses driving.
-        Space pauses; 1/2/3 set game speed.
+        Space pauses; 1/2/3 set game speed. Watch for rush-hour traffic slowing your fleet
+        around 8:00 and 17:00.
       </p>
     </>
   );

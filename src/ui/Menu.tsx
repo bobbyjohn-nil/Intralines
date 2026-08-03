@@ -5,6 +5,7 @@ import { idbDeletePack, idbGetPack } from '../game/data/idb';
 import { SAVE_KEY_PREFIX } from '../game/constants';
 import { useGame } from '../game/store';
 import type { CityMeta } from '../game/types';
+import { BusSide } from './icons';
 
 export function Menu() {
   const openCity = useGame((s) => s.openCity);
@@ -45,8 +46,9 @@ export function Menu() {
   return (
     <div className="menu">
       <div className="menu-inner">
-        <h1>
-          🚌 Transit Lines
+        <h1 className="logo-row">
+          <span className="logo-mark"><BusSide length={1} size={54} /></span>
+          Transit Lines
         </h1>
         <p className="tagline">
           Build a bus company on a real city. Real streets, real census commuters — draw
@@ -101,7 +103,7 @@ export function Menu() {
                         setCached((f) => ({ ...f, [c.id]: false }));
                       }}
                     >
-                      ✕ cache
+                      Clear data
                     </button>
                   )}
                 </div>

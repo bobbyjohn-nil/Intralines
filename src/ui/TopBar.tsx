@@ -1,6 +1,9 @@
 import { useGame } from '../game/store';
 import { SPEEDS, trafficFactor } from '../game/constants';
 import { fmtClock, fmtInt, fmtMoney } from './format';
+import {
+  IconBus, IconCar, IconCash, IconPause, IconPlay, IconRider, IconSignal, IconSmile,
+} from './icons';
 
 export function TopBar() {
   const pack = useGame((s) => s.pack);
@@ -25,35 +28,46 @@ export function TopBar() {
       <div className="chip clock">
         <span className="dim">W{week}</span> {day} <b>{time}</b>
         {congestion >= 1.3 && (
-          <span title="Rush hour — heavy traffic, buses running slow"> 🚗🚗</span>
+          <span className="traffic" title="Rush hour — heavy traffic, buses running slow">
+            <IconCar size={15} />
+          </span>
         )}
       </div>
       <div className="chip speed-group">
         <button className={paused ? 'on' : ''} onClick={togglePause} title="Pause (space)">
-          ⏸
+          <IconPause size={14} />
         </button>
         {SPEEDS.map((sp, i) => (
           <button
-            key={sp.label}
+            key={sp.gameMinPerSec}
             className={!paused && speedIdx === i ? 'on' : ''}
             onClick={() => setSpeed(i)}
-            title={`Speed ${i + 1}`}
+            title={`Speed ${i + 1} (key ${i + 1})`}
           >
-            {sp.label}
+            <IconPlay size={14} count={i + 1} />
           </button>
         ))}
       </div>
       <div className="spacer" />
-      <div className={`chip stat ${cash < 0 ? 'bad' : ''}`} title="Cash">
-        💰 {fmtMoney(cash)}
+      <div className={`chip stat ${cash < 0 ? 'bad' : ''}`} title="Company cash">
+        <IconCash size={15} />
+        {fmtMoney(cash)}
       </div>
       <div className="chip stat" title="Total riders served">
-        👥 {fmtInt(riders)}
+        <IconRider size={15} />
+        {fmtInt(riders)}
       </div>
-      <div className="chip stat" title="Daily riders / satisfaction / coverage">
-        🚌 {fmtInt(stats?.totalDailyRiders ?? 0)}/day
-        <span className="dim"> · </span>😊 {Math.round(stats?.satisfaction ?? 0)}
-        <span className="dim"> · </span>📶 {Math.round(stats?.coveragePct ?? 0)}%
+      <div className="chip stat" title="Daily riders">
+        <IconBus size={15} />
+        {fmtInt(stats?.totalDailyRiders ?? 0)}/day
+      </div>
+      <div className="chip stat" title="Rider satisfaction">
+        <IconSmile size={15} />
+        {Math.round(stats?.satisfaction ?? 0)}
+      </div>
+      <div className="chip stat" title="Residents within a short walk of a stop">
+        <IconSignal size={15} />
+        {Math.round(stats?.coveragePct ?? 0)}%
       </div>
     </div>
   );

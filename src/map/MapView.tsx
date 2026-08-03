@@ -213,7 +213,10 @@ export function MapView({ pack }: { pack: CityPack }) {
     if (st.depot && !depotMarkerRef.current) {
       const el = document.createElement('div');
       el.className = 'depot-marker';
-      el.textContent = '🚌';
+      el.innerHTML =
+        '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" ' +
+        'stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">' +
+        '<path d="M3 10l9-6 9 6v10h-4v-7H7v7H3z"/><path d="M7 20v-3h10v3"/></svg>';
       el.title = 'Bus depot';
       depotMarkerRef.current = new maplibregl.Marker({ element: el, anchor: 'bottom' })
         .setLngLat(st.depot.pt)

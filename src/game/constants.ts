@@ -50,7 +50,8 @@ export const BUS_MODELS: BusModelSpec[] = [
     costPerKm: 0.9,
     kmh: 26,
     unlockRiders: 0,
-    emoji: '🚐',
+    short: 'Mini',
+    lengthFactor: 0.55,
     blurb: 'Cheap and nimble. Perfect for your first neighborhood line.',
   },
   {
@@ -61,7 +62,8 @@ export const BUS_MODELS: BusModelSpec[] = [
     costPerKm: 1.5,
     kmh: 25,
     unlockRiders: 0,
-    emoji: '🚌',
+    short: 'City',
+    lengthFactor: 1,
     blurb: 'The workhorse. Solid capacity for trunk routes.',
   },
   {
@@ -72,7 +74,8 @@ export const BUS_MODELS: BusModelSpec[] = [
     costPerKm: 2.2,
     kmh: 23,
     unlockRiders: 25_000,
-    emoji: '🚋',
+    short: 'Artic',
+    lengthFactor: 1.6,
     blurb: 'A bendy giant for your busiest corridors. Unlocks at 25k riders served.',
   },
   {
@@ -84,7 +87,8 @@ export const BUS_MODELS: BusModelSpec[] = [
     kmh: 26,
     unlockRiders: 60_000,
     needsCharger: true,
-    emoji: '⚡',
+    short: 'E-Bus',
+    lengthFactor: 1,
     blurb: 'Quiet, cheap to run, riders love it (+satisfaction). Needs depot chargers. Unlocks at 60k riders.',
   },
 ];

@@ -68,6 +68,18 @@ button.chip:hover {
   font-variant-numeric: tabular-nums;
 }
 
+.chip .traffic {
+  margin-left: 6px;
+  color: #ad5700;
+  vertical-align: -2px;
+}
+
+.chip.stat svg {
+  vertical-align: -2.5px;
+  margin-right: 5px;
+  opacity: 0.75;
+}
+
 .chip.stat {
   font-weight: 500;
 }
@@ -102,8 +114,9 @@ button.chip:hover {
   border: none;
   background: transparent;
   border-radius: 7px;
-  padding: 4px 9px;
-  font-size: 12px;
+  padding: 5px 9px;
+  display: grid;
+  place-items: center;
 }
 
 .speed-group button.on {
@@ -111,49 +124,64 @@ button.chip:hover {
   color: #ffe9a8;
 }
 
-/* ---------- toolbar ---------- */
+/* ---------- bottom command dock ---------- */
 
-.toolbar {
+.dock {
   position: absolute;
-  left: 12px;
-  top: 64px;
+  bottom: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+  z-index: 22;
+  background: rgba(255, 253, 246, 0.96);
+  padding: 7px;
+  border-radius: 16px;
+  border: 1px solid rgba(60, 55, 40, 0.14);
+  box-shadow: 0 4px 18px rgba(50, 40, 20, 0.18);
+  max-width: calc(100% - 24px);
+  overflow-x: auto;
+}
+
+.dock button {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  z-index: 20;
-  background: rgba(255, 253, 246, 0.94);
-  padding: 8px;
-  border-radius: 14px;
-  border: 1px solid rgba(60, 55, 40, 0.14);
-  box-shadow: 0 2px 12px rgba(50, 40, 20, 0.15);
-}
-
-.toolbar button {
-  width: 44px;
-  height: 44px;
-  font-size: 21px;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-width: 68px;
+  padding: 7px 10px 6px;
   border: none;
-  border-radius: 10px;
+  border-radius: 11px;
   background: transparent;
-  display: grid;
-  place-items: center;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.1px;
+  color: #2c2a24;
+  white-space: nowrap;
 }
 
-.toolbar button:hover {
+.dock button svg {
+  display: block;
+}
+
+.dock button:hover {
   background: rgba(60, 55, 40, 0.08);
 }
 
-.toolbar button.on {
+.dock button.on {
   background: #2c2a24;
+  color: #ffe9a8;
 }
 
-.toolbar-sep {
-  height: 1px;
+.dock-sep {
+  width: 1px;
   background: rgba(60, 55, 40, 0.15);
-  margin: 2px 4px;
+  margin: 4px 5px;
 }
 
-.toolbar button.pulse {
+.dock button.pulse {
   animation: pulse 1.6s infinite;
 }
 
@@ -168,7 +196,7 @@ button.chip:hover {
   position: absolute;
   right: 12px;
   top: 64px;
-  bottom: 40px;
+  bottom: 96px;
   width: 330px;
   overflow-y: auto;
   z-index: 20;
@@ -299,6 +327,18 @@ button.chip:hover {
   font-size: 26px;
 }
 
+.logo-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.logo-mark {
+  color: #2c2a24;
+  display: grid;
+  place-items: center;
+}
+
 .blurb {
   font-size: 12.5px;
   opacity: 0.75;
@@ -344,6 +384,24 @@ button.chip:hover {
   gap: 8px;
   align-items: center;
   flex-wrap: wrap;
+}
+
+.btn.with-icon,
+.warn.with-icon {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.warn.with-icon svg {
+  flex: none;
+}
+
+.bus-side {
+  color: #4a4636;
+  display: grid;
+  place-items: center;
+  min-width: 52px;
 }
 
 .kv {
@@ -495,7 +553,7 @@ button.chip:hover {
 
 .draftbar {
   position: absolute;
-  bottom: 22px;
+  bottom: 96px;
   left: 50%;
   transform: translateX(-50%);
   z-index: 25;
@@ -512,7 +570,7 @@ button.chip:hover {
 
 .notices {
   position: absolute;
-  bottom: 80px;
+  bottom: 152px;
   left: 50%;
   transform: translateX(-50%);
   z-index: 24;
@@ -547,7 +605,9 @@ button.chip:hover {
 /* ---------- depot marker ---------- */
 
 .depot-marker {
-  font-size: 22px;
+  color: #2c2a24;
+  display: grid;
+  place-items: center;
   background: #fffdf6;
   border: 2px solid #2c2a24;
   border-radius: 10px 10px 10px 2px;
@@ -673,7 +733,7 @@ button.chip:hover {
 }
 
 .bus-anim {
-  font-size: 54px;
+  color: #2c2a24;
   animation: drive 1.8s ease-in-out infinite;
 }
 
