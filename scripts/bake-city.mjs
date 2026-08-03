@@ -70,7 +70,14 @@ const LODES_YEARS = [2022, 2021, 2020];
 const OVERPASS = [
   'https://overpass-api.de/api/interpreter',
   'https://overpass.kumi.systems/api/interpreter',
+  'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
+  'https://overpass.private.coffee/api/interpreter',
 ];
+// OSM services block anonymous datacenter clients — identify ourselves
+const USER_AGENT =
+  'TransitLinesGame/0.1 (open-source bus simulation; https://github.com/bobbyjohn-nil/Transit-Lines)';
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 async function getJson(url, init) {
   const res = await fetch(url, init);
@@ -220,18 +227,25 @@ async function fetchJobs(meta) {
 
 async function overpass(q) {
   let lastErr;
-  for (const ep of OVERPASS) {
-    try {
-      console.log(`  overpass: ${ep}`);
-      return await getJson(ep, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: `data=${encodeURIComponent(q)}`,
-      });
-    } catch (e) {
-      lastErr = e;
-      console.warn(`  overpass failed: ${e.message}`);
+  for (let attempt = 0; attempt < 2; attempt++) {
+    for (const ep of OVERPASS) {
+      try {
+        console.log(`  overpass: ${ep}${attempt ? ' (retry)' : ''}`);
+        return await getJson(ep, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'User-Agent': USER_AGENT,
+          },
+          body: `data=${encodeURIComponent(q)}`,
+        });
+      } catch (e) {
+        lastErr = e;
+        console.warn(`  overpass failed: ${e.message}`);
+        if (/429/.test(String(e.message))) await sleep(15000);
+      }
     }
+    if (attempt === 0) await sleep(20000);
   }
   throw lastErr;
 }
