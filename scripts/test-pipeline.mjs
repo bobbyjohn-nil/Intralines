@@ -4,7 +4,7 @@
 
 import assert from 'node:assert/strict';
 import {
-  buildRoadGraph, buildBlockGroups, parseAcs, parseScenic, parseWac, stitchRings,
+  buildRoadGraph, buildBlockGroups, parseAcs, parseRac, parseScenic, parseWac, stitchRings,
 } from '../src/game/data/pipeline.js';
 
 const BBOX = [-71.9, 42.2, -71.7, 42.36];
@@ -135,6 +135,11 @@ const BBOX = [-71.9, 42.2, -71.7, 42.36];
   );
   assert.equal(wac.get('250277301001'), 17, 'blocks aggregate to block group');
   assert.equal(wac.get('250277301002'), 3);
+
+  const rac = parseRac(
+    'h_geocode,C000,CA01\n250277301001001,20,5\n250277301001005,5,2\n',
+  );
+  assert.equal(rac.get('250277301001'), 25, 'RAC uses home geocode column');
 }
 
 // --- block group assembly -------------------------------------------------------

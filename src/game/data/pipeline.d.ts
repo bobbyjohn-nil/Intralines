@@ -14,6 +14,7 @@ export declare function buildRoadGraph(
 ): { nodes: LngLat[]; edges: RoadEdge[] };
 export declare function parseAcs(rows: string[][]): Map<string, number>;
 export declare function parseWac(csvText: string): Map<string, number>;
+export declare function parseRac(csvText: string): Map<string, number>;
 export declare function buildBlockGroups(
   features: GeoJSON.Feature[],
   popByBg: Map<string, number>,

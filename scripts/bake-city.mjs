@@ -14,7 +14,7 @@ import { fileURLToPath } from 'node:url';
 import { gunzipSync, gzipSync } from 'node:zlib';
 import {
   buildBlockGroups, buildRoadGraph, overpassQuery, overpassScenicQuery, parseAcs,
-  parseScenic, parseWac,
+  parseRac, parseScenic, parseWac,
 } from '../src/game/data/pipeline.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -138,50 +138,81 @@ async function fetchGeometries(meta, layerId) {
   return features;
 }
 
+async function fetchLodesGz(url) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`${res.status} for ${url}`);
+  return gunzipSync(Buffer.from(await res.arrayBuffer())).toString('utf8');
+}
+
+/**
+ * Population per block group. Primary: ACS 5-year (true population).
+ * Fallback: LODES RAC employed residents scaled by the workforce rate —
+ * the Census API rate-limits anonymous callers (especially shared CI IPs),
+ * while the LEHD file server does not.
+ */
 async function fetchPop(meta) {
   const out = new Map();
-  for (const c of meta.counties) {
-    let done = false;
-    let lastErr;
-    for (const year of ACS_YEARS) {
-      for (const inClause of [
-        `in=state:${c.state}%20county:${c.county}%20tract:*`,
-        `in=state:${c.state}%20county:${c.county}&in=tract:*`,
-        `in=state:${c.state}%20county:${c.county}`,
-      ]) {
-        try {
-          const rows = await getJson(
-            `https://api.census.gov/data/${year}/acs/acs5?get=B01003_001E&for=block%20group:*&${inClause}`,
-          );
-          if (!Array.isArray(rows) || rows.length < 2) throw new Error('empty response');
-          for (const [k, v] of parseAcs(rows)) out.set(k, v);
-          done = true;
-          break;
-        } catch (e) {
-          lastErr = e;
+  try {
+    for (const c of meta.counties) {
+      let done = false;
+      let lastErr;
+      for (const year of ACS_YEARS) {
+        for (const inClause of [
+          `in=state:${c.state}%20county:${c.county}%20tract:*`,
+          `in=state:${c.state}%20county:${c.county}&in=tract:*`,
+          `in=state:${c.state}%20county:${c.county}`,
+        ]) {
+          try {
+            const rows = await getJson(
+              `https://api.census.gov/data/${year}/acs/acs5?get=B01003_001E&for=block%20group:*&${inClause}`,
+            );
+            if (!Array.isArray(rows) || rows.length < 2) throw new Error('empty response');
+            for (const [k, v] of parseAcs(rows)) out.set(k, v);
+            done = true;
+            break;
+          } catch (e) {
+            lastErr = e;
+          }
         }
+        if (done) break;
       }
-      if (done) break;
+      if (!done) throw lastErr;
     }
-    if (!done) throw lastErr;
+    console.log(`  population rows (ACS): ${out.size}`);
+    return { pop: out, source: 'ACS' };
+  } catch (e) {
+    console.warn(`  ACS unavailable (${e.message ?? e}); using LODES RAC residents`);
   }
-  console.log(`  population rows: ${out.size}`);
-  return out;
+  let lastErr;
+  for (const year of LODES_YEARS) {
+    try {
+      const text = await fetchLodesGz(
+        `https://lehd.ces.census.gov/data/lodes/LODES8/${meta.lodesState}/rac/${meta.lodesState}_rac_S000_JT00_${year}.csv.gz`,
+      );
+      const workers = parseRac(text);
+      const rate = meta.calib.workforceRate;
+      for (const [bg, w] of workers) out.set(bg, Math.round(w / rate));
+      console.log(`  population rows (RAC ${year}): ${out.size}`);
+      return { pop: out, source: `LODES RAC ${year}` };
+    } catch (e) {
+      lastErr = e;
+      console.warn(`  RAC ${year} failed: ${e.message}`);
+    }
+  }
+  throw lastErr;
 }
 
 async function fetchJobs(meta) {
   for (const year of LODES_YEARS) {
-    const url = `https://lehd.ces.census.gov/data/lodes/LODES8/${meta.lodesState}/wac/${meta.lodesState}_wac_S000_JT00_${year}.csv.gz`;
     try {
-      const res = await fetch(url);
-      if (!res.ok) throw new Error(String(res.status));
-      const buf = Buffer.from(await res.arrayBuffer());
-      const text = gunzipSync(buf).toString('utf8');
+      const text = await fetchLodesGz(
+        `https://lehd.ces.census.gov/data/lodes/LODES8/${meta.lodesState}/wac/${meta.lodesState}_wac_S000_JT00_${year}.csv.gz`,
+      );
       const map = parseWac(text);
-      console.log(`  LODES ${year}: ${map.size} block groups with jobs`);
+      console.log(`  LODES WAC ${year}: ${map.size} block groups with jobs`);
       return map;
     } catch (e) {
-      console.warn(`  LODES ${year} failed: ${e.message}`);
+      console.warn(`  LODES WAC ${year} failed: ${e.message}`);
     }
   }
   throw new Error('all LODES years failed');
@@ -220,13 +251,13 @@ async function bake(id, force) {
   console.log(`\nBaking ${meta.name}…`);
   const layerId = await blockGroupLayerId();
   const features = await fetchGeometries(meta, layerId);
-  const pop = await fetchPop(meta);
+  const { pop, source: popSource } = await fetchPop(meta);
   let jobs = null;
-  let source = 'US Census ACS + LEHD LODES + OpenStreetMap';
+  let source = `US Census (${popSource}) + LEHD LODES + OpenStreetMap`;
   try {
     jobs = await fetchJobs(meta);
   } catch {
-    source = 'US Census ACS + OpenStreetMap (job locations estimated)';
+    source = `US Census (${popSource}) + OpenStreetMap (job locations estimated)`;
     console.warn('  falling back to estimated job locations');
   }
   const roadsJson = await overpass(overpassQuery(meta.bbox));

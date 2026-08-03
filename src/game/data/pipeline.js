@@ -245,14 +245,15 @@ export function parseAcs(rows) {
   return out;
 }
 
-/** LODES WAC csv text -> Map geoid(12 = block group) -> jobs */
-export function parseWac(csvText) {
+/** LODES csv text -> Map geoid(12 = block group) -> C000 count */
+function parseLodes(csvText, geoColumn) {
   const out = new Map();
   let pos = 0;
   const nl = csvText.indexOf('\n');
   const header = csvText.slice(0, nl).split(',');
-  const iGeo = header.indexOf('w_geocode');
-  const iJobs = header.indexOf('C000');
+  const iGeo = header.indexOf(geoColumn);
+  const iCount = header.indexOf('C000');
+  if (iGeo === -1 || iCount === -1) throw new Error(`bad LODES header (${geoColumn})`);
   pos = nl + 1;
   while (pos < csvText.length) {
     let end = csvText.indexOf('\n', pos);
@@ -262,10 +263,20 @@ export function parseWac(csvText) {
     if (!line) continue;
     const cells = line.split(',');
     const bg = String(cells[iGeo]).slice(0, 12);
-    const jobs = +cells[iJobs] || 0;
-    out.set(bg, (out.get(bg) || 0) + jobs);
+    const n = +cells[iCount] || 0;
+    out.set(bg, (out.get(bg) || 0) + n);
   }
   return out;
+}
+
+/** LODES WAC (workplaces): jobs per block group */
+export function parseWac(csvText) {
+  return parseLodes(csvText, 'w_geocode');
+}
+
+/** LODES RAC (residences): employed residents per block group */
+export function parseRac(csvText) {
+  return parseLodes(csvText, 'h_geocode');
 }
 
 function ringCentroid(ring) {

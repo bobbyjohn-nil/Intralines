@@ -2,7 +2,7 @@ import type { CityMeta, CityPack } from '../types';
 import { idbGetPack, idbPutPack } from './idb';
 import {
   buildBlockGroups, buildRoadGraph, overpassQuery, overpassScenicQuery, parseAcs,
-  parseScenic, parseWac,
+  parseRac, parseScenic, parseWac,
 } from './pipeline';
 import { generateBuildings } from './proceduralBuildings';
 
@@ -50,16 +50,24 @@ export async function loadCity(meta: CityMeta, progress: ProgressFn): Promise<Ci
   );
 
   progress(`Downloading ${meta.name}…`, 'population (American Community Survey)');
-  const popByBg = await stage('Census population (ACS)', () => fetchAcsPopulation(meta));
+  let popByBg: Map<string, number>;
+  let popSource = 'ACS';
+  try {
+    popByBg = await fetchAcsPopulation(meta);
+  } catch {
+    // the Census API rate-limits anonymous callers; LEHD's file server doesn't
+    progress(`Downloading ${meta.name}…`, 'population (LODES residents — ACS was busy)');
+    popByBg = await stage('Census population (LODES RAC)', () => fetchRacPopulation(meta));
+    popSource = 'LODES residents';
+  }
 
   progress(`Downloading ${meta.name}…`, 'workplaces (LEHD LODES)');
   let jobsByBg: Map<string, number> | null = null;
-  let jobsNote = 'US Census ACS + LEHD LODES + OpenStreetMap';
+  let jobsNote = `US Census (${popSource}) + LEHD LODES + OpenStreetMap`;
   try {
     jobsByBg = await fetchLodesJobs(meta);
   } catch {
-    jobsNote =
-      'US Census ACS + OpenStreetMap (job locations estimated — LODES unavailable in browser)';
+    jobsNote = `US Census (${popSource}) + OpenStreetMap (job locations estimated — LODES unavailable in browser)`;
   }
 
   progress(
@@ -312,25 +320,38 @@ async function fetchAcsPopulation(meta: CityMeta): Promise<Map<string, number>> 
 
 // --- LODES --------------------------------------------------------------------
 
-async function fetchLodesJobs(meta: CityMeta): Promise<Map<string, number>> {
+async function fetchLodesCsv(meta: CityMeta, kind: 'wac' | 'rac'): Promise<string> {
   if (!meta.lodesState) throw new Error('no LODES state');
   let lastErr: unknown = null;
   for (const year of LODES_YEARS) {
-    const url = `https://lehd.ces.census.gov/data/lodes/LODES8/${meta.lodesState}/wac/${meta.lodesState}_wac_S000_JT00_${year}.csv.gz`;
+    const url = `https://lehd.ces.census.gov/data/lodes/LODES8/${meta.lodesState}/${kind}/${meta.lodesState}_${kind}_S000_JT00_${year}.csv.gz`;
     try {
       const res = await fetch(url);
-      if (!res.ok) throw new Error(`LODES ${year}: ${res.status}`);
+      if (!res.ok) throw new Error(`LODES ${kind} ${year}: ${res.status}`);
       if (typeof DecompressionStream === 'undefined' || !res.body) {
         throw new Error('DecompressionStream unsupported');
       }
       const ds = new DecompressionStream('gzip');
-      const text = await new Response(res.body.pipeThrough(ds)).text();
-      return parseWac(text);
+      return await new Response(res.body.pipeThrough(ds)).text();
     } catch (e) {
       lastErr = e;
     }
   }
   throw lastErr ?? new Error('LODES unavailable');
+}
+
+async function fetchLodesJobs(meta: CityMeta): Promise<Map<string, number>> {
+  return parseWac(await fetchLodesCsv(meta, 'wac'));
+}
+
+/** employed residents scaled to approximate total population */
+async function fetchRacPopulation(meta: CityMeta): Promise<Map<string, number>> {
+  const workers = parseRac(await fetchLodesCsv(meta, 'rac'));
+  const out = new Map<string, number>();
+  for (const [bg, w] of workers) {
+    out.set(bg, Math.round(w / meta.calib.workforceRate));
+  }
+  return out;
 }
 
 // --- Overpass -------------------------------------------------------------------
