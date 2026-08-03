@@ -104,3 +104,27 @@ export const SPEEDS: { label: string; gameMinPerSec: number }[] = [
 
 export const SAVE_VERSION = 1;
 export const SAVE_KEY_PREFIX = 'transit-lines-save-';
+
+/**
+ * Street congestion by hour of day: 1 = free flow. Buses visibly slow down,
+ * pause longer at lights and bunch up when this climbs. Piecewise-linear so
+ * rush hour ramps in and out instead of snapping.
+ */
+const TRAFFIC_ANCHORS: [number, number][] = [
+  [0, 0.9], [5, 0.92], [6.5, 1.1], [7.5, 1.45], [9, 1.32], [10, 1.12],
+  [12, 1.18], [14.5, 1.15], [16, 1.42], [17.5, 1.52], [19, 1.15],
+  [21, 1.0], [24, 0.9],
+];
+
+export function trafficFactor(hour: number): number {
+  const h = ((hour % 24) + 24) % 24;
+  for (let i = 1; i < TRAFFIC_ANCHORS.length; i++) {
+    const [h1, f1] = TRAFFIC_ANCHORS[i];
+    if (h <= h1) {
+      const [h0, f0] = TRAFFIC_ANCHORS[i - 1];
+      const t = (h - h0) / Math.max(h1 - h0, 1e-6);
+      return f0 + (f1 - f0) * t;
+    }
+  }
+  return 0.9;
+}

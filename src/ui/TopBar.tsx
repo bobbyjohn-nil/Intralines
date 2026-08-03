@@ -1,5 +1,5 @@
 import { useGame } from '../game/store';
-import { SPEEDS } from '../game/constants';
+import { SPEEDS, trafficFactor } from '../game/constants';
 import { fmtClock, fmtInt, fmtMoney } from './format';
 
 export function TopBar() {
@@ -15,6 +15,7 @@ export function TopBar() {
   const backToMenu = useGame((s) => s.backToMenu);
 
   const { day, time, week } = fmtClock(clockMin);
+  const congestion = trafficFactor((clockMin / 60) % 24);
 
   return (
     <div className="topbar">
@@ -23,6 +24,9 @@ export function TopBar() {
       </button>
       <div className="chip clock">
         <span className="dim">W{week}</span> {day} <b>{time}</b>
+        {congestion >= 1.3 && (
+          <span title="Rush hour — heavy traffic, buses running slow"> 🚗🚗</span>
+        )}
       </div>
       <div className="chip speed-group">
         <button className={paused ? 'on' : ''} onClick={togglePause} title="Pause (space)">

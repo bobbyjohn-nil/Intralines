@@ -202,7 +202,7 @@ export function MapView({ pack }: { pack: CityPack }) {
     updateNetwork(map, st.stops, st.lines, st.selectedLineId);
     updateDraft(map, st.draft);
     syncDepot();
-    busLayerRef.current?.setNetwork(st.lines, st.stats?.perLine ?? []);
+    busLayerRef.current?.setNetwork(st.lines, st.stats?.perLine ?? [], st.stops);
   }
 
   function syncDepot(): void {
@@ -246,9 +246,9 @@ export function MapView({ pack }: { pack: CityPack }) {
 
   useEffect(() => {
     if (readyRef.current) {
-      busLayerRef.current?.setNetwork(lines, stats?.perLine ?? []);
+      busLayerRef.current?.setNetwork(lines, stats?.perLine ?? [], stops);
     }
-  }, [lines, stats]);
+  }, [lines, stats, stops]);
 
   useEffect(() => {
     const map = mapRef.current;
