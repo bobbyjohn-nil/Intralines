@@ -7,6 +7,28 @@ import type { DraftLine } from '../game/store';
 
 const EMPTY = { type: 'FeatureCollection', features: [] } as GeoJSON.FeatureCollection;
 
+import type { ExpressionSpecification } from 'maplibre-gl';
+
+/** color ramps for the demand heatmap (purple = residents, teal = jobs) */
+const HEAT_COLORS: Record<'pop' | 'jobs', ExpressionSpecification> = {
+  pop: [
+    'interpolate', ['linear'], ['heatmap-density'],
+    0, 'rgba(122,88,224,0)',
+    0.12, 'rgba(139,106,232,0.22)',
+    0.35, 'rgba(122,84,224,0.45)',
+    0.65, 'rgba(103,63,211,0.62)',
+    1, 'rgba(82,44,180,0.78)',
+  ],
+  jobs: [
+    'interpolate', ['linear'], ['heatmap-density'],
+    0, 'rgba(16,128,148,0)',
+    0.12, 'rgba(22,148,168,0.22)',
+    0.35, 'rgba(16,128,150,0.46)',
+    0.65, 'rgba(12,106,128,0.64)',
+    1, 'rgba(8,84,104,0.8)',
+  ],
+};
+
 export function ensureOverlays(map: MLMap): void {
   const addSrc = (id: string) => {
     if (!map.getSource(id)) map.addSource(id, { type: 'geojson', data: EMPTY });
@@ -15,21 +37,28 @@ export function ensureOverlays(map: MLMap): void {
     addSrc,
   );
 
-  if (!map.getLayer('heatmap-fill')) {
-    // slide the heatmap underneath roads + buildings so it tints the ground
-    // instead of washing over the whole scene
+  if (!map.getLayer('heatmap-blob')) {
+    // a true smooth heatmap over block-group centroids (soft general areas,
+    // not hard census-block edges), slid underneath roads + buildings
     const layers = map.getStyle().layers ?? [];
     const beforeId = layers.find(
       (l) => l.id.startsWith('road') || l.id.startsWith('building'),
     )?.id;
     map.addLayer(
       {
-        id: 'heatmap-fill',
-        type: 'fill',
+        id: 'heatmap-blob',
+        type: 'heatmap',
         source: 'heatmap-src',
         paint: {
-          'fill-color': ['get', 'color'],
-          'fill-opacity': ['get', 'op'],
+          'heatmap-weight': ['get', 'w'],
+          'heatmap-intensity': [
+            'interpolate', ['linear'], ['zoom'], 10, 1.3, 13, 2.2, 16, 3.2,
+          ],
+          'heatmap-radius': [
+            'interpolate', ['exponential', 1.6], ['zoom'], 10, 16, 12, 34, 14, 70, 16, 150,
+          ],
+          'heatmap-opacity': 0.85,
+          'heatmap-color': HEAT_COLORS.pop,
         },
       },
       beforeId,
@@ -157,19 +186,15 @@ export function updateHeatmap(
     (mode === 'pop' ? bg.pop : bg.jobs) / Math.max(bg.areaKm2, 0.02),
   );
   const sorted = [...dens].sort((a, b) => a - b);
-  const p95 = sorted[Math.floor(sorted.length * 0.95)] || 1;
-  const features = pack.blockGroups.map((bg, i) => {
-    const t = Math.min(dens[i] / p95, 1);
-    const color = mode === 'pop' ? '#6741d9' : '#0b7285';
-    return {
-      type: 'Feature' as const,
-      properties: { color, op: 0.06 + t * 0.42 },
-      geometry: {
-        type: 'Polygon' as const,
-        coordinates: bg.rings.map((r) => [...r, r[0]]),
-      },
-    };
-  });
+  const p85 = sorted[Math.floor(sorted.length * 0.85)] || 1;
+  const features = pack.blockGroups.map((bg, i) => ({
+    type: 'Feature' as const,
+    properties: { w: Math.min(dens[i] / p85, 1) },
+    geometry: { type: 'Point' as const, coordinates: bg.centroid },
+  }));
+  if (map.getLayer('heatmap-blob')) {
+    map.setPaintProperty('heatmap-blob', 'heatmap-color', HEAT_COLORS[mode]);
+  }
   setData(map, 'heatmap-src', { type: 'FeatureCollection', features });
 }
 

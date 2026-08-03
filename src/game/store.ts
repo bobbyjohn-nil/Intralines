@@ -239,7 +239,7 @@ export const useGame = create<GameState>((set, get) => {
     draft: null,
     selectedLineId: null,
     panel: 'help',
-    heatmap: 'pop',
+    heatmap: 'off',
     notices: [],
     mapEpoch: 0,
     basemapPref:
@@ -299,7 +299,7 @@ export const useGame = create<GameState>((set, get) => {
         draft: null,
         selectedLineId: null,
         panel: saved ? 'none' : 'help',
-        heatmap: 'pop',
+        heatmap: 'off',
         mapEpoch: 0,
         ...base,
       });
