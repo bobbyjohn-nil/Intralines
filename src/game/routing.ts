@@ -83,6 +83,23 @@ export class RoadGraph {
       return top;
     };
 
+    // penalize direction changes so routes run straight along arterials like
+    // real bus lines instead of staircasing through grids
+    const turnPenaltyM = (w: number, u: number, v: number): number => {
+      if (w < 0) return 0;
+      const A = this.pack.nodes[w];
+      const B = this.pack.nodes[u];
+      const C = this.pack.nodes[v];
+      const d1 = Math.atan2((B[0] - A[0]) * this.cosLat, B[1] - A[1]);
+      const d2 = Math.atan2((C[0] - B[0]) * this.cosLat, C[1] - B[1]);
+      let deg = Math.abs(((d2 - d1) * 180) / Math.PI);
+      if (deg > 180) deg = 360 - deg;
+      if (deg < 30) return 0;
+      if (deg < 70) return 12;
+      if (deg < 120) return 45;
+      return 140; // sharp turns / U-turns
+    };
+
     dist[from] = 0;
     push(h(from), from);
     const closed = new Uint8Array(n);
@@ -92,7 +109,7 @@ export class RoadGraph {
       if (closed[u]) continue;
       closed[u] = 1;
       for (const { to: v, edge, lenM } of this.adj[u]) {
-        const nd = dist[u] + lenM;
+        const nd = dist[u] + lenM + turnPenaltyM(prev[u], u, v);
         if (nd < dist[v]) {
           dist[v] = nd;
           prev[v] = u;
@@ -106,13 +123,15 @@ export class RoadGraph {
     const path: LngLat[] = [];
     let cur = to;
     const segs: LngLat[][] = [];
+    let trueLenM = 0;
     while (cur !== from) {
       const p = prev[cur];
       const e = this.pack.edges[prevEdge[cur]];
-      const shape: LngLat[] = [this.pack.nodes[p], ...e.pts, this.pack.nodes[cur]];
-      // edge shape points are stored a->b; reverse when traversing b->a
-      if (e.a === cur) shape.reverse();
-      segs.push(shape);
+      trueLenM += e.lenM;
+      // edge shape points are stored a->b; flip them when traversing b->a so
+      // the drawn route never zigzags back on itself
+      const mid = e.a === p ? e.pts : [...e.pts].reverse();
+      segs.push([this.pack.nodes[p], ...mid, this.pack.nodes[cur]]);
       cur = p;
     }
     segs.reverse();
@@ -120,7 +139,7 @@ export class RoadGraph {
       const start = path.length ? 1 : 0;
       for (let i = start; i < s.length; i++) path.push(s[i]);
     }
-    return { path, lenM: dist[to] };
+    return { path, lenM: trueLenM };
   }
 }
 
@@ -162,5 +181,7 @@ export function pointAlong(
 function segBearing(path: LngLat[], i: number): number {
   const a = path[Math.max(0, Math.min(i, path.length - 2))];
   const b = path[Math.max(1, Math.min(i + 1, path.length - 1))];
-  return (Math.atan2(b[0] - a[0], b[1] - a[1]) * 180) / Math.PI;
+  // scale Δlng by cos(lat) so buses align with streets at any latitude
+  const cos = Math.cos((a[1] * Math.PI) / 180);
+  return (Math.atan2((b[0] - a[0]) * cos, b[1] - a[1]) * 180) / Math.PI;
 }

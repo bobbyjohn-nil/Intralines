@@ -22,6 +22,82 @@ export function overpassQuery(bbox) {
   );
 }
 
+/** water + green space, for the offline self-rendered basemap */
+export function overpassScenicQuery(bbox) {
+  const [w, s, e, n] = bbox;
+  const bb = `(${s},${w},${n},${e})`;
+  return (
+    `[out:json][timeout:240];(` +
+    `way["natural"="water"]${bb};` +
+    `relation["natural"="water"]${bb};` +
+    `way["waterway"="riverbank"]${bb};` +
+    `way["leisure"~"^(park|golf_course|nature_reserve|pitch|garden)$"]${bb};` +
+    `way["landuse"~"^(forest|grass|recreation_ground|cemetery|meadow|village_green)$"]${bb};` +
+    `);out geom;`
+  );
+}
+
+/**
+ * Parse the scenic query (issued with `out geom`) into water/park rings.
+ * Relations (big lakes are multipolygons) get their outer ways stitched
+ * end-to-end into closed rings; unstitchable leftovers are dropped.
+ */
+export function parseScenic(overpass) {
+  const water = [];
+  const parks = [];
+  const pushRing = (dest, coords) => {
+    if (!coords || coords.length < 4) return;
+    const ring = simplifyRing(coords, 0.00025);
+    if (ring.length < 4) return;
+    if (ringAreaKm2(ring) < 0.004) return;
+    dest.push(ring);
+  };
+  for (const el of overpass.elements ?? []) {
+    const tags = el.tags ?? {};
+    const isWater = tags.natural === 'water' || tags.waterway === 'riverbank';
+    const dest = isWater ? water : parks;
+    if (el.type === 'way' && Array.isArray(el.geometry)) {
+      pushRing(dest, el.geometry.map((g) => [g.lon, g.lat]));
+    } else if (el.type === 'relation' && Array.isArray(el.members)) {
+      const segs = el.members
+        .filter((m) => (m.role === 'outer' || m.role === '') && Array.isArray(m.geometry))
+        .map((m) => m.geometry.map((g) => [g.lon, g.lat]));
+      for (const ring of stitchRings(segs)) pushRing(dest, ring);
+    }
+    if (water.length > 400 && parks.length > 700) break;
+  }
+  return { water: water.slice(0, 400), parks: parks.slice(0, 700) };
+}
+
+const keyOf = (p) => `${Math.round(p[0] * 1e6)}:${Math.round(p[1] * 1e6)}`;
+
+/** join way segments end-to-end into closed rings (best effort) */
+export function stitchRings(segs) {
+  const pool = segs.filter((s) => s.length >= 2).map((s) => [...s]);
+  const rings = [];
+  while (pool.length) {
+    let ring = pool.pop();
+    let guard = pool.length + 4;
+    while (guard-- > 0 && keyOf(ring[0]) !== keyOf(ring[ring.length - 1])) {
+      const end = keyOf(ring[ring.length - 1]);
+      let found = -1;
+      let flip = false;
+      for (let i = 0; i < pool.length; i++) {
+        if (keyOf(pool[i][0]) === end) { found = i; flip = false; break; }
+        if (keyOf(pool[i][pool[i].length - 1]) === end) { found = i; flip = true; break; }
+      }
+      if (found === -1) break;
+      const next = pool.splice(found, 1)[0];
+      if (flip) next.reverse();
+      ring = ring.concat(next.slice(1));
+    }
+    if (keyOf(ring[0]) === keyOf(ring[ring.length - 1]) && ring.length >= 4) {
+      rings.push(ring);
+    }
+  }
+  return rings;
+}
+
 function inBbox(lng, lat, bbox) {
   return lng >= bbox[0] && lng <= bbox[2] && lat >= bbox[1] && lat <= bbox[3];
 }
@@ -54,8 +130,10 @@ export function buildRoadGraph(overpass, bbox) {
   const idxOf = (osmId) => {
     let i = nodeIdx.get(osmId);
     if (i === undefined) {
+      const coord = nodeCoord.get(osmId);
+      if (!coord) return -1; // node missing from the response — skip segment
       i = nodes.length;
-      nodes.push(nodeCoord.get(osmId));
+      nodes.push(coord);
       nodeIdx.set(osmId, i);
     }
     return i;
@@ -98,13 +176,11 @@ export function buildRoadGraph(overpass, bbox) {
                 last = p;
               }
             }
-            edges.push({
-              a: idxOf(idsSeg[0]),
-              b: idxOf(idsSeg[idsSeg.length - 1]),
-              lenM: Math.round(len),
-              kmh: speed,
-              pts,
-            });
+            const ia = idxOf(idsSeg[0]);
+            const ib = idxOf(idsSeg[idsSeg.length - 1]);
+            if (ia >= 0 && ib >= 0 && ia !== ib) {
+              edges.push({ a: ia, b: ib, lenM: Math.round(len), kmh: speed, pts });
+            }
           }
         }
       }

@@ -65,6 +65,10 @@ export interface GameState {
   heatmap: 'off' | 'pop' | 'jobs';
   notices: Notice[];
   mapEpoch: number; // bumped when overlays must refresh
+  /** 'auto' = online basemap tiles when reachable; 'offline' = never phone home */
+  basemapPref: 'auto' | 'offline';
+  /** what the map actually used this session (for the toggle button icon) */
+  basemapActive: 'online' | 'offline';
 
   // actions
   openCity: (pack: CityPack) => void;
@@ -76,6 +80,8 @@ export interface GameState {
   setTool: (t: Tool) => void;
   setPanel: (p: Panel) => void;
   setHeatmap: (h: 'off' | 'pop' | 'jobs') => void;
+  toggleBasemap: () => void;
+  setBasemapActive: (m: 'online' | 'offline') => void;
   mapClick: (pt: LngLat) => void;
   undoDraftStop: () => void;
   cancelDraft: () => void;
@@ -233,6 +239,11 @@ export const useGame = create<GameState>((set, get) => {
     heatmap: 'pop',
     notices: [],
     mapEpoch: 0,
+    basemapPref:
+      (typeof localStorage !== 'undefined' &&
+        (localStorage.getItem('tl-basemap') as 'auto' | 'offline')) ||
+      'auto',
+    basemapActive: 'offline',
 
     openCity: (pack) => {
       worker?.terminate();
@@ -385,6 +396,18 @@ export const useGame = create<GameState>((set, get) => {
 
     setPanel: (p) => set({ panel: p }),
     setHeatmap: (h) => set({ heatmap: h }),
+
+    toggleBasemap: () => {
+      const pref = get().basemapPref === 'auto' ? 'offline' : 'auto';
+      try {
+        localStorage.setItem('tl-basemap', pref);
+      } catch {
+        // fine
+      }
+      set({ basemapPref: pref });
+    },
+
+    setBasemapActive: (m) => set({ basemapActive: m }),
 
     mapClick: (pt) => {
       const s = get();

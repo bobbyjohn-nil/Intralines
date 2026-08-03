@@ -3,7 +3,7 @@
 
 const DB_NAME = 'transit-lines';
 const STORE = 'cityPacks';
-export const PACK_FORMAT_VERSION = 1;
+export const PACK_FORMAT_VERSION = 2; // v2: added water/parks polygons
 
 function open(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {

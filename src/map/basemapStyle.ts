@@ -330,8 +330,13 @@ export function buildRealStyle(): StyleSpecification {
   };
 }
 
-/** Fully offline style for the demo city — everything drawn from the pack. */
-export function buildDemoStyle(pack: CityPack): StyleSpecification {
+/**
+ * Fully offline style drawn from the city pack itself: real streets from the
+ * cached OSM graph, water/parks polygons, and stylized 3D buildings. Used for
+ * the demo city and for real cities in offline mode (or when tiles are
+ * unreachable).
+ */
+export function buildPackStyle(pack: CityPack): StyleSpecification {
   const roadFeatures = pack.edges.map((e) => ({
     type: 'Feature' as const,
     properties: { kmh: e.kmh },
@@ -389,9 +394,16 @@ export function buildDemoStyle(pack: CityPack): StyleSpecification {
         layout: { 'line-cap': 'round', 'line-join': 'round' },
         paint: {
           'line-color': [
-            'case', ['>', ['get', 'kmh'], 35], PALETTE.primaryCasing, PALETTE.streetCasing,
+            'case',
+            ['>=', ['get', 'kmh'], 70], PALETTE.motorwayCasing,
+            ['>=', ['get', 'kmh'], 42], PALETTE.primaryCasing,
+            PALETTE.streetCasing,
           ],
-          'line-width': ['interpolate', ['exponential', 1.5], ['zoom'], 11, 1.4, 18, 20],
+          'line-width': [
+            'interpolate', ['exponential', 1.5], ['zoom'],
+            11, ['case', ['>=', ['get', 'kmh'], 42], 1.8, 1.1],
+            18, ['case', ['>=', ['get', 'kmh'], 42], 24, 16],
+          ],
         },
       },
       {
@@ -401,9 +413,16 @@ export function buildDemoStyle(pack: CityPack): StyleSpecification {
         layout: { 'line-cap': 'round', 'line-join': 'round' },
         paint: {
           'line-color': [
-            'case', ['>', ['get', 'kmh'], 35], PALETTE.primary, PALETTE.street,
+            'case',
+            ['>=', ['get', 'kmh'], 70], PALETTE.motorway,
+            ['>=', ['get', 'kmh'], 42], PALETTE.primary,
+            PALETTE.street,
           ],
-          'line-width': ['interpolate', ['exponential', 1.5], ['zoom'], 11, 0.9, 18, 15],
+          'line-width': [
+            'interpolate', ['exponential', 1.5], ['zoom'],
+            11, ['case', ['>=', ['get', 'kmh'], 42], 1.3, 0.7],
+            18, ['case', ['>=', ['get', 'kmh'], 42], 19, 12],
+          ],
         },
       },
       {

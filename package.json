@@ -11,7 +11,8 @@
     "app": "npm run build && electron .",
     "dist": "npm run build && electron-builder",
     "demo-city": "node scripts/make-demo-city.mjs",
-    "bake": "node scripts/bake-city.mjs"
+    "bake": "node scripts/bake-city.mjs",
+    "test": "node scripts/test-pipeline.mjs"
   },
   "build": {
     "appId": "com.transitlines.game",

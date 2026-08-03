@@ -11,6 +11,10 @@ export function Toolbar() {
   const heatmap = useGame((s) => s.heatmap);
   const setHeatmap = useGame((s) => s.setHeatmap);
   const depot = useGame((s) => s.depot);
+  const pack = useGame((s) => s.pack);
+  const basemapPref = useGame((s) => s.basemapPref);
+  const basemapActive = useGame((s) => s.basemapActive);
+  const toggleBasemap = useGame((s) => s.toggleBasemap);
 
   const togglePanel = (p: Panel) => setPanel(panel === p ? 'none' : p);
   const cycleHeat = () =>
@@ -48,6 +52,18 @@ export function Toolbar() {
       >
         {heatmap === 'jobs' ? '💼' : '🌡'}
       </button>
+      {pack?.meta.kind === 'real' && (
+        <button
+          onClick={toggleBasemap}
+          title={
+            basemapPref === 'offline'
+              ? 'Basemap: offline (built-in map, no internet used) — click for online tiles'
+              : `Basemap: auto (currently ${basemapActive}) — click to force offline`
+          }
+        >
+          {basemapPref === 'offline' ? '🗺' : '🌐'}
+        </button>
+      )}
       <div className="toolbar-sep" />
       <button className={panel === 'lines' ? 'on' : ''} onClick={() => togglePanel('lines')} title="Lines">
         🚏

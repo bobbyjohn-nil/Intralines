@@ -11,9 +11,10 @@
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { gunzipSync } from 'node:zlib';
+import { gunzipSync, gzipSync } from 'node:zlib';
 import {
-  buildBlockGroups, buildRoadGraph, overpassQuery, parseAcs, parseWac,
+  buildBlockGroups, buildRoadGraph, overpassQuery, overpassScenicQuery, parseAcs,
+  parseScenic, parseWac,
 } from '../src/game/data/pipeline.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -64,8 +65,8 @@ const CITIES = {
 
 const TIGERWEB =
   'https://tigerweb.geo.census.gov/arcgis/rest/services/TIGERweb/Tracts_Blocks/MapServer';
-const ACS_YEAR = 2022;
-const LODES_YEARS = [2021, 2020, 2019];
+const ACS_YEARS = [2023, 2022, 2021];
+const LODES_YEARS = [2022, 2021, 2020];
 const OVERPASS = [
   'https://overpass-api.de/api/interpreter',
   'https://overpass.kumi.systems/api/interpreter',
@@ -87,37 +88,82 @@ async function blockGroupLayerId() {
 async function fetchGeometries(meta, layerId) {
   const features = [];
   for (const c of meta.counties) {
-    let offset = 0;
-    for (;;) {
-      const params = new URLSearchParams({
-        where: `STATE='${c.state}' AND COUNTY='${c.county}'`,
-        outFields: 'GEOID,AREALAND',
-        f: 'geojson',
-        outSR: '4326',
-        geometryPrecision: '5',
-        resultRecordCount: '1000',
-        resultOffset: String(offset),
-      });
-      const gj = await getJson(`${TIGERWEB}/${layerId}/query?${params}`);
-      const batch = gj.features ?? [];
-      features.push(...batch);
-      process.stdout.write(`  geometries: ${features.length}\r`);
-      if (batch.length < 1000) break;
-      offset += batch.length;
+    const base = {
+      where: `STATE='${c.state}' AND COUNTY='${c.county}'`,
+      outFields: 'GEOID,AREALAND,OBJECTID',
+      outSR: '4326',
+      geometryPrecision: '5',
+    };
+    let got = [];
+    // try paginated geojson, then plain geojson, then OBJECTID windows
+    try {
+      let offset = 0;
+      for (;;) {
+        const gj = await getJson(
+          `${TIGERWEB}/${layerId}/query?${new URLSearchParams({
+            ...base, f: 'geojson', resultRecordCount: '1000', resultOffset: String(offset),
+          })}`,
+        );
+        if (gj.error || !Array.isArray(gj.features)) throw new Error('pagination unsupported');
+        got.push(...gj.features);
+        if (gj.features.length < 1000) break;
+        offset += gj.features.length;
+      }
+    } catch {
+      got = [];
+      const gj = await getJson(
+        `${TIGERWEB}/${layerId}/query?${new URLSearchParams({ ...base, f: 'geojson' })}`,
+      );
+      if (!gj.error && Array.isArray(gj.features)) got = gj.features;
+      let lastOid = got.reduce((m, f) => Math.max(m, f.properties?.OBJECTID ?? 0), 0);
+      while (gj.exceededTransferLimit && lastOid > 0) {
+        const more = await getJson(
+          `${TIGERWEB}/${layerId}/query?${new URLSearchParams({
+            ...base, where: `${base.where} AND OBJECTID>${lastOid}`, f: 'geojson',
+          })}`,
+        );
+        if (more.error || !Array.isArray(more.features) || !more.features.length) break;
+        got.push(...more.features);
+        const next = more.features.reduce(
+          (m, f) => Math.max(m, f.properties?.OBJECTID ?? 0), 0,
+        );
+        if (next <= lastOid) break;
+        lastOid = next;
+        if (!more.exceededTransferLimit) break;
+      }
     }
+    features.push(...got);
+    console.log(`  geometries so far: ${features.length}`);
   }
-  console.log(`  geometries: ${features.length}`);
   return features;
 }
 
 async function fetchPop(meta) {
   const out = new Map();
   for (const c of meta.counties) {
-    const url =
-      `https://api.census.gov/data/${ACS_YEAR}/acs/acs5` +
-      `?get=B01003_001E&for=block%20group:*&in=state:${c.state}%20county:${c.county}%20tract:*`;
-    const rows = await getJson(url);
-    for (const [k, v] of parseAcs(rows)) out.set(k, v);
+    let done = false;
+    let lastErr;
+    for (const year of ACS_YEARS) {
+      for (const inClause of [
+        `in=state:${c.state}%20county:${c.county}%20tract:*`,
+        `in=state:${c.state}%20county:${c.county}&in=tract:*`,
+        `in=state:${c.state}%20county:${c.county}`,
+      ]) {
+        try {
+          const rows = await getJson(
+            `https://api.census.gov/data/${year}/acs/acs5?get=B01003_001E&for=block%20group:*&${inClause}`,
+          );
+          if (!Array.isArray(rows) || rows.length < 2) throw new Error('empty response');
+          for (const [k, v] of parseAcs(rows)) out.set(k, v);
+          done = true;
+          break;
+        } catch (e) {
+          lastErr = e;
+        }
+      }
+      if (done) break;
+    }
+    if (!done) throw lastErr;
   }
   console.log(`  population rows: ${out.size}`);
   return out;
@@ -141,8 +187,7 @@ async function fetchJobs(meta) {
   throw new Error('all LODES years failed');
 }
 
-async function fetchRoads(meta) {
-  const q = overpassQuery(meta.bbox);
+async function overpass(q) {
   let lastErr;
   for (const ep of OVERPASS) {
     try {
@@ -179,22 +224,32 @@ async function bake(id) {
     source = 'US Census ACS + OpenStreetMap (job locations estimated)';
     console.warn('  falling back to estimated job locations');
   }
-  const overpass = await fetchRoads(meta);
+  const roadsJson = await overpass(overpassQuery(meta.bbox));
+  let scenic = { water: [], parks: [] };
+  try {
+    scenic = parseScenic(await overpass(overpassScenicQuery(meta.bbox)));
+  } catch (e) {
+    console.warn(`  water/parks fetch failed (cosmetic only): ${e.message}`);
+  }
   const blockGroups = buildBlockGroups(features, pop, jobs, meta.bbox, meta.center);
-  const graph = buildRoadGraph(overpass, meta.bbox);
+  const graph = buildRoadGraph(roadsJson, meta.bbox);
   const pack = {
     meta: { ...meta, dataSource: source },
     blockGroups,
     nodes: graph.nodes,
     edges: graph.edges,
+    water: scenic.water,
+    parks: scenic.parks,
   };
-  const outPath = join(__dirname, '..', 'public', 'cities', `${id}.json`);
+  const json = JSON.stringify(pack);
+  const outPath = join(__dirname, '..', 'public', 'cities', `${id}.json.gz`);
   mkdirSync(dirname(outPath), { recursive: true });
-  writeFileSync(outPath, JSON.stringify(pack));
-  const mb = (JSON.stringify(pack).length / 1e6).toFixed(1);
+  writeFileSync(outPath, gzipSync(Buffer.from(json), { level: 9 }));
   console.log(
-    `  wrote ${outPath} (${mb} MB): ${blockGroups.length} block groups, ` +
-      `${graph.nodes.length} nodes, ${graph.edges.length} edges`,
+    `  wrote ${outPath} (${(json.length / 1e6).toFixed(1)} MB raw, ` +
+      `${(gzipSync(Buffer.from(json)).length / 1e6).toFixed(1)} MB gz): ` +
+      `${blockGroups.length} block groups, ${graph.nodes.length} nodes, ` +
+      `${graph.edges.length} edges, ${scenic.water.length} water, ${scenic.parks.length} parks`,
   );
 }
 

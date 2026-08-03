@@ -2,6 +2,12 @@ import type { BlockGroup, LngLat, RoadEdge } from '../types';
 
 export declare const ROAD_CLASSES: string[];
 export declare function overpassQuery(bbox: [number, number, number, number]): string;
+export declare function overpassScenicQuery(bbox: [number, number, number, number]): string;
+export declare function parseScenic(overpass: { elements: unknown[] }): {
+  water: LngLat[][];
+  parks: LngLat[][];
+};
+export declare function stitchRings(segs: LngLat[][]): LngLat[][];
 export declare function buildRoadGraph(
   overpass: { elements: unknown[] },
   bbox: [number, number, number, number],

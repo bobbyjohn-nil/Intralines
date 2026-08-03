@@ -36,13 +36,23 @@ npm run dev        # open http://localhost:5173
 
 - **Riverton (demo city)** is bundled — instant play, fully offline, great for learning the game.
 - **Worcester MA, Des Moines IA, Madison WI** are real cities. On first launch your browser
-  downloads the data live (≈10–40 MB, one time, cached in IndexedDB):
+  downloads the data live (≈10–40 MB, **one time** — it's cached locally and every later
+  session plays offline):
   - block group boundaries — US Census **TIGERweb**
   - population per block group — Census **ACS 5-year**
   - jobs per block group — Census **LEHD LODES** (falls back to an estimate if the download
     is blocked; the attribution line tells you which you got)
-  - the street network — **OpenStreetMap** via Overpass
-  - basemap tiles & 3D buildings — **OpenFreeMap** (needs internet while playing real cities)
+  - streets, lakes, rivers and parks — **OpenStreetMap** via Overpass
+
+## Offline play
+
+After the one-time data download the game **does not need the internet**. Real cities render
+with a built-in basemap drawn from the cached data itself: real streets, water and parks from
+OpenStreetMap, plus stylized 3D buildings generated from census density. If you're online,
+the game can instead use live OpenFreeMap tiles (real building footprints, street labels) —
+the 🌐/🗺 button in the toolbar switches between *auto (online when reachable)* and
+*always offline*; when tiles can't be reached the game falls back to the offline map
+automatically.
 
 To skip the in-browser download entirely, pre-bake city packs on any machine with open
 internet and commit/serve the result:
@@ -51,7 +61,8 @@ internet and commit/serve the result:
 npm run bake -- worcester        # or: desmoines madison all
 ```
 
-This writes `public/cities/<id>.json`; the game uses a baked pack automatically when present.
+This writes `public/cities/<id>.json.gz`; the game uses a baked pack automatically when
+present — first launch is then instant and fully offline.
 
 ## How to play
 
@@ -111,12 +122,21 @@ src/
   ui/                   top bar, toolbar, panels, menu, loading screen
 ```
 
+## Tests
+
+```bash
+npm test        # fixture tests for the data pipeline (way splitting, ring
+                # stitching, census parsers) — no network needed
+```
+
 ## Known limitations / roadmap ideas
 
 - Transfers are modeled through one shared stop between two lines (no full journey planner).
 - Buses ignore one-way streets and traffic; travel time comes from per-model speeds.
 - LODES jobs download depends on the LEHD server allowing browser requests; otherwise jobs are
   estimated (clearly labeled) — baking with `npm run bake` always uses real LODES data.
+- Offline-mode buildings are stylized (density-driven), not real footprints — switch the
+  basemap to online for real building shapes.
 - Saves live in `localStorage` (export/import available in the Finances panel).
 - Fun next steps: POI demand spikes (stadiums, campus events), line-profit overlays, walk-shed
   isochrone preview, more cities (any US metro works — add an entry to `cities.ts` and bake).

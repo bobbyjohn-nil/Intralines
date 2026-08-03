@@ -1,13 +1,29 @@
 import { useEffect, useRef } from 'react';
-import maplibregl, { Map as MLMap, MapMouseEvent } from 'maplibre-gl';
+import maplibregl, { Map as MLMap, MapMouseEvent, StyleSpecification } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import type { CityPack } from '../game/types';
 import { useGame } from '../game/store';
-import { buildDemoStyle, buildRealStyle, PALETTE } from './basemapStyle';
+import { buildPackStyle, buildRealStyle, PALETTE } from './basemapStyle';
 import {
   ensureOverlays, updateDepot, updateDraft, updateDraftCursor, updateHeatmap, updateNetwork,
 } from './overlays';
 import { BusLayer3D } from './busLayer3d';
+
+/** quick probe: can we actually reach the tile server? */
+async function tilesReachable(): Promise<boolean> {
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 2500);
+    const res = await fetch('https://tiles.openfreemap.org/planet', {
+      signal: ctrl.signal,
+      cache: 'no-store',
+    });
+    clearTimeout(timer);
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
 
 export function MapView({ pack }: { pack: CityPack }) {
   const divRef = useRef<HTMLDivElement>(null);
@@ -24,134 +40,159 @@ export function MapView({ pack }: { pack: CityPack }) {
   const depot = useGame((s) => s.depot);
   const stats = useGame((s) => s.stats);
   const tool = useGame((s) => s.tool);
+  const basemapPref = useGame((s) => s.basemapPref);
 
-  // create the map once per city
+  // create the map once per city (and re-create when basemap mode changes)
   useEffect(() => {
     if (!divRef.current) return;
-    const style = pack.meta.kind === 'demo' ? buildDemoStyle(pack) : buildRealStyle();
-    const [w, s, e, n] = pack.meta.bbox;
-    const pad = 0.35;
-    const map = new maplibregl.Map({
-      container: divRef.current,
-      style,
-      center: pack.meta.center,
-      zoom: pack.meta.zoom,
-      pitch: 48,
-      bearing: -14,
-      maxBounds: [
-        [w - pad, s - pad],
-        [e + pad, n + pad],
-      ],
-      minZoom: 10,
-      maxZoom: 18,
-      attributionControl: false,
-      antialias: true,
-    });
-    map.addControl(
-      new maplibregl.AttributionControl({
-        compact: true,
-        customAttribution:
-          pack.meta.kind === 'demo'
-            ? 'Demo data'
-            : '© OpenFreeMap © OpenMapTiles © OpenStreetMap contributors · US Census Bureau',
-      }),
-      'bottom-right',
-    );
-    map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'bottom-right');
-    map.touchZoomRotate.enableRotation();
-    mapRef.current = map;
+    let cancelled = false;
+    let map: MLMap | null = null;
+    let dayNight: ReturnType<typeof setInterval> | null = null;
 
-    const busLayer = new BusLayer3D(() => {
-      const { clockRef } = useGame.getState();
-      return clockRef.min + ((performance.now() - clockRef.realMs) / 1000) * clockRef.rate;
-    });
-    busLayerRef.current = busLayer;
-    // debug/testing hooks
-    (window as unknown as { __busLayer?: BusLayer3D; __map?: MLMap }).__busLayer = busLayer;
-    (window as unknown as { __busLayer?: BusLayer3D; __map?: MLMap }).__map = map;
-
-    map.on('load', () => {
-      ensureOverlays(map);
-      map.addLayer(busLayer);
-      readyRef.current = true;
-      syncAll();
-    });
-
-    // when the style fails (e.g. no network for tiles), still show overlays
-    map.on('error', (e) => {
-      // eslint-disable-next-line no-console
-      console.warn('map error', e?.error?.message ?? e);
-    });
-
-    const clickHandler = (e: MapMouseEvent) => {
-      const st = useGame.getState();
-      const pt: [number, number] = [e.lngLat.lng, e.lngLat.lat];
-      if (st.tool === 'select') {
-        const feats = map.getLayer('lines-hit')
-          ? map.queryRenderedFeatures(e.point, { layers: ['lines-hit'] })
-          : [];
-        if (feats.length) {
-          st.selectLine(feats[0].properties?.id ?? null);
-        } else if (st.selectedLineId) {
-          st.selectLine(null);
-        }
-        return;
+    const boot = async (): Promise<void> => {
+      const online =
+        pack.meta.kind === 'real' && basemapPref === 'auto' && (await tilesReachable());
+      if (cancelled || !divRef.current) return;
+      useGame.getState().setBasemapActive(online ? 'online' : 'offline');
+      if (pack.meta.kind === 'real' && basemapPref === 'auto' && !online) {
+        useGame
+          .getState()
+          .notify('No internet for map tiles — using the built-in offline map.', 'info');
       }
-      st.mapClick(pt);
-    };
-    map.on('click', clickHandler);
+      const style: StyleSpecification = online ? buildRealStyle() : buildPackStyle(pack);
 
-    let moveScheduled = false;
-    const moveHandler = (e: MapMouseEvent) => {
-      if (moveScheduled) return;
-      moveScheduled = true;
-      requestAnimationFrame(() => {
-        moveScheduled = false;
-        if (!readyRef.current) return;
-        const st = useGame.getState();
-        if (st.tool === 'line-new' && st.draft && st.draft.stops.length) {
-          const last = st.draft.stops[st.draft.stops.length - 1];
-          updateDraftCursor(map, last.pt, [e.lngLat.lng, e.lngLat.lat]);
-        } else {
-          updateDraftCursor(map, null, null);
-        }
+      const [w, s, e, n] = pack.meta.bbox;
+      const pad = 0.35;
+      map = new maplibregl.Map({
+        container: divRef.current,
+        style,
+        center: pack.meta.center,
+        zoom: pack.meta.zoom,
+        pitch: 48,
+        bearing: -14,
+        maxBounds: [
+          [w - pad, s - pad],
+          [e + pad, n + pad],
+        ],
+        minZoom: 10,
+        maxZoom: 18,
+        attributionControl: false,
+        antialias: true,
       });
-    };
-    map.on('mousemove', moveHandler);
+      map.addControl(
+        new maplibregl.AttributionControl({
+          compact: true,
+          customAttribution:
+            pack.meta.kind === 'demo'
+              ? 'Demo data'
+              : online
+                ? '© OpenFreeMap © OpenMapTiles © OpenStreetMap contributors · US Census Bureau'
+                : '© OpenStreetMap contributors · US Census Bureau (offline mode)',
+        }),
+        'bottom-right',
+      );
+      map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'bottom-right');
+      map.touchZoomRotate.enableRotation();
+      mapRef.current = map;
 
-    // day/night tinting for the basemap
-    const dayNight = setInterval(() => {
-      if (!readyRef.current) return;
-      const { clockMin } = useGame.getState();
-      const hour = (clockMin / 60) % 24;
-      const day =
-        hour < 5 || hour >= 21 ? 0 : hour < 7 ? (hour - 5) / 2 : hour < 19 ? 1 : 1 - (hour - 19) / 2;
-      const blend = (a: string, b: string) => mixColor(a, b, 1 - day);
-      if (map.getLayer('bg')) {
-        map.setPaintProperty('bg', 'background-color', blend(PALETTE.land, '#232733'));
-      }
-      if (map.getLayer('water')) {
-        map.setPaintProperty(
-          'water', 'fill-color', blend(PALETTE.water, '#1d3050'),
-        );
-      }
-      if (map.getLayer('building-3d')) {
-        map.setPaintProperty(
-          'building-3d', 'fill-extrusion-color', blend(PALETTE.building3d, '#3a3f4e'),
-        );
-      }
-    }, 1500);
+      const busLayer = new BusLayer3D(() => {
+        const { clockRef } = useGame.getState();
+        return clockRef.min + ((performance.now() - clockRef.realMs) / 1000) * clockRef.rate;
+      });
+      busLayerRef.current = busLayer;
+      // debug/testing hooks
+      (window as unknown as { __busLayer?: BusLayer3D; __map?: MLMap }).__busLayer = busLayer;
+      (window as unknown as { __busLayer?: BusLayer3D; __map?: MLMap }).__map = map;
+
+      map.on('load', () => {
+        if (!map) return;
+        ensureOverlays(map);
+        map.addLayer(busLayer);
+        readyRef.current = true;
+        syncAll();
+      });
+
+      map.on('error', (e) => {
+        // eslint-disable-next-line no-console
+        console.warn('map error', e?.error?.message ?? e);
+      });
+
+      map.on('click', (e: MapMouseEvent) => {
+        if (!map) return;
+        const st = useGame.getState();
+        const pt: [number, number] = [e.lngLat.lng, e.lngLat.lat];
+        if (st.tool === 'select') {
+          const feats = map.getLayer('lines-hit')
+            ? map.queryRenderedFeatures(e.point, { layers: ['lines-hit'] })
+            : [];
+          if (feats.length) {
+            st.selectLine(feats[0].properties?.id ?? null);
+          } else if (st.selectedLineId) {
+            st.selectLine(null);
+          }
+          return;
+        }
+        st.mapClick(pt);
+      });
+
+      let moveScheduled = false;
+      map.on('mousemove', (e: MapMouseEvent) => {
+        if (moveScheduled) return;
+        moveScheduled = true;
+        requestAnimationFrame(() => {
+          moveScheduled = false;
+          if (!readyRef.current || !map) return;
+          const st = useGame.getState();
+          if (st.tool === 'line-new' && st.draft && st.draft.stops.length) {
+            const last = st.draft.stops[st.draft.stops.length - 1];
+            updateDraftCursor(map, last.pt, [e.lngLat.lng, e.lngLat.lat]);
+          } else {
+            updateDraftCursor(map, null, null);
+          }
+        });
+      });
+
+      // day/night tinting for the basemap
+      dayNight = setInterval(() => {
+        if (!readyRef.current || !map) return;
+        const { clockMin } = useGame.getState();
+        const hour = (clockMin / 60) % 24;
+        const day =
+          hour < 5 || hour >= 21
+            ? 0
+            : hour < 7
+              ? (hour - 5) / 2
+              : hour < 19
+                ? 1
+                : 1 - (hour - 19) / 2;
+        const blend = (a: string, b: string) => mixColor(a, b, 1 - day);
+        if (map.getLayer('bg')) {
+          map.setPaintProperty('bg', 'background-color', blend(PALETTE.land, '#232733'));
+        }
+        if (map.getLayer('water')) {
+          map.setPaintProperty('water', 'fill-color', blend(PALETTE.water, '#1d3050'));
+        }
+        if (map.getLayer('building-3d')) {
+          map.setPaintProperty(
+            'building-3d', 'fill-extrusion-color', blend(PALETTE.building3d, '#3a3f4e'),
+          );
+        }
+      }, 1500);
+    };
+
+    void boot();
 
     return () => {
-      clearInterval(dayNight);
+      cancelled = true;
+      if (dayNight) clearInterval(dayNight);
       readyRef.current = false;
       depotMarkerRef.current?.remove();
       depotMarkerRef.current = null;
-      map.remove();
+      map?.remove();
       mapRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pack.meta.id]);
+  }, [pack.meta.id, basemapPref]);
 
   function syncAll(): void {
     const map = mapRef.current;
