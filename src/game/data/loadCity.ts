@@ -131,9 +131,11 @@ async function stage<T>(label: string, fn: () => Promise<T>): Promise<T> {
 const GZ_MAGIC = [0x1f, 0x8b];
 
 async function tryBaked(id: string): Promise<CityPack | null> {
-  // gzipped pack first (what `npm run bake` produces), then plain json
+  // gzipped pack first (what `npm run bake` produces), then plain json.
+  // 'no-cache' revalidates with the server so a stale 404 cached from before
+  // the packs were deployed can't hide them forever.
   try {
-    const res = await fetch(`./cities/${id}.json.gz`, { cache: 'force-cache' });
+    const res = await fetch(`./cities/${id}.json.gz`, { cache: 'no-cache' });
     if (res.ok) {
       const buf = new Uint8Array(await res.arrayBuffer());
       if (buf[0] === GZ_MAGIC[0] && buf[1] === GZ_MAGIC[1]) {
@@ -150,7 +152,7 @@ async function tryBaked(id: string): Promise<CityPack | null> {
     // fall through
   }
   try {
-    const res = await fetch(`./cities/${id}.json`, { cache: 'force-cache' });
+    const res = await fetch(`./cities/${id}.json`, { cache: 'no-cache' });
     if (!res.ok) return null;
     const text = await res.text();
     if (!text.trimStart().startsWith('{')) return null; // SPA index.html fallback
