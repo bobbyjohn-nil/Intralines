@@ -18,7 +18,20 @@ export function TopBar() {
   const backToMenu = useGame((s) => s.backToMenu);
 
   const { day, time, week } = fmtClock(clockMin);
-  const congestion = trafficFactor((clockMin / 60) % 24);
+  // riders you've put on buses are cars you've taken off the road
+  let relief = 1;
+  if (stats?.bgModes) {
+    let car = 0;
+    let bus = 0;
+    for (const m of stats.bgModes) {
+      car += m.car;
+      bus += m.bus;
+    }
+    const baseline = car + bus * 0.87;
+    if (baseline > 0) relief = Math.max(0.6, Math.min(1, car / baseline));
+  }
+  const base = trafficFactor((clockMin / 60) % 24);
+  const congestion = base > 1 ? 1 + (base - 1) * relief : base;
 
   return (
     <div className="topbar">

@@ -41,6 +41,11 @@ export interface LineExtras {
   mainShare: number;
   /** street route from the depot to the line's first stop (deadhead) */
   depotPath?: { path: LngLat[]; cum: number[]; lenM: number };
+  /**
+   * congestion relief from bus ridership along this corridor: 1 = no
+   * effect, lower = riders who would have driven are off the road
+   */
+  relief?: number;
 }
 
 interface LineAnim {
@@ -349,9 +354,12 @@ export class BusLayer3D implements CustomLayerInterface {
       // grind to a near-standstill at rush hour, rural side streets barely
       // notice it
       const gain = urban * (1.2 + 1.2 * mainShare) + 0.08;
+      const relief = ex?.relief ?? 1;
       const congAt = (hour: number): number => {
         const base = trafficFactor(hour);
-        const g = base >= 1 ? gain : Math.min(gain, 1);
+        // bus riders who would have driven are off the road: ridership
+        // damps the rush-hour amplitude on this corridor
+        const g = base >= 1 ? gain * relief : Math.min(gain, 1);
         return Math.max(0.55, 1 + (base - 1) * g);
       };
       const tau = new Float64Array(1440 / TAU_STEP + 1);
@@ -596,9 +604,12 @@ export class BusLayer3D implements CustomLayerInterface {
           const { x, z } = this.toLocal(hit.pt);
           // rules of the road: keep to the right-hand side of the centerline
           // in the direction of travel, so opposing buses pass each other
+          // instead of colliding head-on. The offset scales with the bus's
+          // rendered size — buses are drawn far larger than life at city
+          // zooms, so a fixed real-world lane offset would vanish under them.
           const rb = ((hit.bearing + 90) * Math.PI) / 180;
-          const RIGHT_M = 3.1;
-          mesh.position.set(x + Math.sin(rb) * RIGHT_M, 0, z - Math.cos(rb) * RIGHT_M);
+          const rightM = Math.max(3.1, busScale * 1.6);
+          mesh.position.set(x + Math.sin(rb) * rightM, 0, z - Math.cos(rb) * rightM);
           mesh.rotation.y = Math.PI / 2 - (hit.bearing * Math.PI) / 180;
           mesh.scale.setScalar(busScale);
           applyBusLighting(mesh, day);

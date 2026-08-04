@@ -21,6 +21,8 @@ export const CHANGELOG: LogEntry[] = [
     items: [
       'New "Travel modes" demand view: every neighborhood dot blends the four mode colors in proportion to how its commuters actually get around — slate for driving, green for the bus, blue for walking, amber for biking — straight from the mode-choice model. Build better service and watch neighborhoods shade green.',
       'Click any demand dot to inspect it: residents, jobs (with education and tourism slices), density, and a full travel-mode breakdown with percentage bars.',
+      'Ridership eases traffic: bus riders who would have driven are off the road, so corridors with strong ridership see visibly lighter rush hours (and the rush-hour indicator reflects it citywide).',
+      'Opposing buses no longer drive through each other — the keep-right offset now scales with how large buses are drawn, so they visibly pass in their own lanes at any zoom.',
     ],
   },
   {

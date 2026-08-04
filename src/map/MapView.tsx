@@ -359,23 +359,27 @@ export function MapView({ pack }: { pack: CityPack }) {
     // census density field: bucket block-group densities so corridor samples
     // can look up how urban their surroundings are
     const CELLD = 0.008;
-    const dgrid = new Map<string, number[]>();
+    const dgrid = new Map<string, { d: number; i: number }[]>();
     const dens: number[] = [];
-    for (const bg of pk.blockGroups) {
+    pk.blockGroups.forEach((bg, i) => {
       const d = (bg.pop + bg.jobs) / Math.max(bg.areaKm2, 0.05);
       dens.push(d);
       const k = `${Math.floor(bg.centroid[0] / CELLD)}:${Math.floor(bg.centroid[1] / CELLD)}`;
-      (dgrid.get(k) ?? dgrid.set(k, []).get(k)!).push(d);
-    }
+      (dgrid.get(k) ?? dgrid.set(k, []).get(k)!).push({ d, i });
+    });
     const sorted = [...dens].sort((a, b) => a - b);
     const densNorm = sorted[Math.floor(sorted.length * 0.85)] || 1;
-    const localDensity = (pt: [number, number]): number => {
+    const bgModes = st.stats?.bgModes;
+    const cellScan = (pt: [number, number], into: Set<number>): number => {
       const gx = Math.floor(pt[0] / CELLD);
       const gy = Math.floor(pt[1] / CELLD);
       let best = 0;
       for (let x = gx - 1; x <= gx + 1; x++) {
         for (let y = gy - 1; y <= gy + 1; y++) {
-          for (const d of dgrid.get(`${x}:${y}`) ?? []) if (d > best) best = d;
+          for (const e of dgrid.get(`${x}:${y}`) ?? []) {
+            if (e.d > best) best = e.d;
+            into.add(e.i);
+          }
         }
       }
       return best;
@@ -387,6 +391,7 @@ export function MapView({ pack }: { pack: CityPack }) {
       let mainCnt = 0;
       let samples = 0;
       let lastSample = -1e9;
+      const nearBg = new Set<number>();
       for (let i = 0; i < l.path.length; i++) {
         const pnt = l.path[i];
         if (keys.has(`${Math.round(pnt[0] * 1e5)}:${Math.round(pnt[1] * 1e5)}`)) {
@@ -397,15 +402,32 @@ export function MapView({ pack }: { pack: CityPack }) {
         if (l.cum[i] - lastSample >= 250 || i === 0) {
           lastSample = l.cum[i];
           samples++;
-          urbanSum += Math.min(localDensity(pnt) / densNorm, 1);
+          urbanSum += Math.min(cellScan(pnt, nearBg) / densNorm, 1);
           const kmh = g.speedNear(pnt, 60);
           if (kmh !== null && kmh >= 42) mainCnt++;
         }
+      }
+      // riders along this corridor who would otherwise drive are off the
+      // road: 87% of bus trips displace a car (the rest are captive riders)
+      let relief = 1;
+      if (bgModes) {
+        let car = 0;
+        let bus = 0;
+        for (const bi of nearBg) {
+          const m = bgModes[bi];
+          if (m) {
+            car += m.car;
+            bus += m.bus;
+          }
+        }
+        const baseline = car + bus * 0.87;
+        if (baseline > 0) relief = Math.max(0.6, Math.min(1, car / baseline));
       }
       const extras: LineExtras = {
         intersections: ds,
         urban: samples ? urbanSum / samples : 0.5,
         mainShare: samples ? mainCnt / samples : 0.5,
+        relief,
       };
       // deadhead: real street route from the depot to the first stop
       const first = st.stops.find((x) => x.id === l.stopIds[0]);
