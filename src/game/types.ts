@@ -77,6 +77,10 @@ export interface Stop {
   /** road graph node index */
   node: number;
   pt: LngLat;
+  /** amenity level: 1 = sign stop, 2 = shelter, 3 = station */
+  tier: number;
+  /** build + upgrade spend so far (drives demolition refunds) */
+  invested: number;
 }
 
 export interface BusModelSpec {

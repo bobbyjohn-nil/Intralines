@@ -5,7 +5,8 @@ import {
 import {
   BUSES_PER_MECHANIC, BUS_MODELS, CHARGERS_COST, DEPOT_CAPACITY, DEPOT_UPGRADE_COST,
   DRIVER_WAGE_PER_HOUR, HEADWAY_CHOICES, LOAN_AMOUNT, LOAN_WEEKLY_INTEREST,
-  MECHANIC_WAGE_PER_DAY, SUBSIDY_PER_RIDER, WASH_BAY_COST, WORKSHOP_COST,
+  MECHANIC_WAGE_PER_DAY, STOP_COST, STOP_TIER_NAMES, STOP_UPGRADE_COST, SUBSIDY_PER_RIDER,
+  WASH_BAY_COST, WORKSHOP_COST,
 } from '../game/constants';
 import { fmtInt, fmtMoney } from './format';
 import type { LineStats } from '../game/types';
@@ -230,6 +231,8 @@ function LineEditPanel() {
         />
       </div>
 
+      <StopList stopIds={line.stopIds} />
+
       {st && (
         <div className="stat-grid">
           <div>
@@ -280,12 +283,61 @@ function LineEditPanel() {
   );
 }
 
+/** the line's stops with per-stop upgrade buttons (sign -> shelter -> station) */
+function StopList({ stopIds }: { stopIds: string[] }) {
+  const stops = useGame((s) => s.stops);
+  const cash = useGame((s) => s.cash);
+  const upgradeStop = useGame((s) => s.upgradeStop);
+  return (
+    <div className="field">
+      <label>
+        Stops <small className="dim">(upgrades pull riders from further out)</small>
+      </label>
+      <div className="stop-list">
+        {stopIds.map((sid) => {
+          const st = stops.find((x) => x.id === sid);
+          if (!st) return null;
+          const tier = st.tier ?? 1;
+          const next = tier + 1;
+          const cost = STOP_UPGRADE_COST[next];
+          return (
+            <div key={sid} className="stop-row">
+              <span className="stop-row-name" title={st.name}>{st.name}</span>
+              <span className="dim">{STOP_TIER_NAMES[tier]}</span>
+              {cost ? (
+                <button
+                  className="btn tiny"
+                  disabled={cash < cost}
+                  title={
+                    cash < cost
+                      ? `Need ${fmtMoney(cost)}`
+                      : `Upgrade to ${STOP_TIER_NAMES[next]?.toLowerCase()}`
+                  }
+                  onClick={() => upgradeStop(sid)}
+                >
+                  {STOP_TIER_NAMES[next]} · {fmtMoney(cost)}
+                </button>
+              ) : (
+                <span className="dim">Max</span>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function DraftPanel() {
   const draft = useGame((s) => s.draft)!;
   const undo = useGame((s) => s.undoDraftStop);
   const cancel = useGame((s) => s.cancelDraft);
   const finish = useGame((s) => s.finishDraft);
+  const existing = useGame((s) => s.stops);
   const km = draft.legs.reduce((s, l) => s + l.lenM, 0) / 1000;
+  const existingIds = new Set(existing.map((s) => s.id));
+  const newCount = draft.stops.filter((s) => !existingIds.has(s.id)).length;
+  const buildCost = newCount * STOP_COST;
   return (
     <>
       <PanelTitle title="Drawing new line" />
@@ -300,6 +352,10 @@ function DraftPanel() {
       <div className="kv">
         <span>Length</span>
         <b>{km.toFixed(1)} km</b>
+      </div>
+      <div className="kv">
+        <span>Build cost</span>
+        <b>{fmtMoney(buildCost)}</b>
       </div>
       <div className="btn-row">
         <button className="btn" onClick={undo} disabled={!draft.stops.length}>

@@ -6,7 +6,8 @@ import {
   BUS_MODELS, DEPOT_CAPACITY, DEPOT_COST, DEPOT_UPGRADE_COST, DEPOT_UPKEEP_PER_DAY,
   BUSES_PER_MECHANIC, CHARGERS_COST, HEADWAY_CHOICES, LINE_COLORS, LOAN_AMOUNT,
   LOAN_WEEKLY_INTEREST, MECHANIC_WAGE_PER_DAY, OFFICE_OVERHEAD_PER_DAY, SAVE_KEY_PREFIX,
-  SAVE_VERSION, SPEEDS, START_CASH, SUBSIDY_PER_RIDER, WASH_BAY_COST, WORKSHOP_COST,
+  SAVE_VERSION, SPEEDS, START_CASH, STOP_COST, STOP_TIER_NAMES, STOP_UPGRADE_COST,
+  SUBSIDY_PER_RIDER, WASH_BAY_COST, WORKSHOP_COST,
 } from './constants';
 import { RoadGraph, cumulativeDist } from './routing';
 import { fastDistM } from './geo';
@@ -98,6 +99,7 @@ export interface GameState {
   fire: (role: keyof Staff) => void;
   buildDepot: (pt: LngLat) => void;
   upgradeDepot: () => void;
+  upgradeStop: (stopId: string) => void;
   buyDepotAddon: (addon: 'workshop' | 'washBay' | 'chargers') => void;
   takeLoan: () => void;
   notify: (text: string, kind?: Notice['kind']) => void;
@@ -185,7 +187,7 @@ export const useGame = create<GameState>((set, get) => {
         type: 'network',
         reqId: reqSeq,
         costMult,
-        stops: s.stops.map((st) => ({ id: st.id, pt: st.pt })),
+        stops: s.stops.map((st) => ({ id: st.id, pt: st.pt, tier: st.tier ?? 1 })),
         lines: s.lines.map((l) => {
           const m = busModel(l.modelId);
           return {
@@ -272,6 +274,9 @@ export const useGame = create<GameState>((set, get) => {
                   st.name = graph.stopNameAt(node) ?? st.name;
                 }
               }
+              // saves from before stops cost money
+              st.tier = st.tier ?? 1;
+              st.invested = st.invested ?? STOP_COST;
             }
             if (sv.depot) {
               const dn = graph.nearestNode(sv.depot.pt, 400);
@@ -471,6 +476,8 @@ export const useGame = create<GameState>((set, get) => {
               name: streetName ?? `Stop ${stopSeq}`,
               node,
               pt: s.graph.pack.nodes[node],
+              tier: 1,
+              invested: STOP_COST,
             };
           }
         }
@@ -550,7 +557,17 @@ export const useGame = create<GameState>((set, get) => {
       };
       const existingIds = new Set(s.stops.map((st) => st.id));
       const newStops = s.draft.stops.filter((st) => !existingIds.has(st.id));
+      const buildCost = newStops.length * STOP_COST;
+      if (buildCost > s.cash) {
+        get().notify(
+          `Building ${newStops.length} new stops costs $${(buildCost / 1000).toFixed(0)}k — ` +
+            'not enough cash.',
+          'bad',
+        );
+        return;
+      }
       set({
+        cash: s.cash - buildCost,
         stops: [...s.stops, ...newStops],
         lines: [...s.lines, line],
         draft: null,
@@ -559,7 +576,13 @@ export const useGame = create<GameState>((set, get) => {
         panel: 'line-edit',
       });
       touchNetwork();
-      get().notify(`${line.name} created — assign buses to start service.`, 'info');
+      get().notify(
+        buildCost > 0
+          ? `${line.name} created (${newStops.length} stops built for ` +
+              `$${(buildCost / 1000).toFixed(0)}k) — assign buses to start service.`
+          : `${line.name} created — assign buses to start service.`,
+        'info',
+      );
       get().saveGame();
     },
 
@@ -575,13 +598,26 @@ export const useGame = create<GameState>((set, get) => {
       const s = get();
       const lines = s.lines.filter((l) => l.id !== id);
       const usedStops = new Set(lines.flatMap((l) => l.stopIds));
+      const orphans = s.stops.filter((st) => !usedStops.has(st.id));
+      // demolished stops salvage half of what was sunk into them
+      const refund = Math.round(
+        orphans.reduce((sum, st) => sum + (st.invested ?? STOP_COST), 0) / 2,
+      );
       set({
+        cash: s.cash + refund,
         lines,
         stops: s.stops.filter((st) => usedStops.has(st.id)),
         selectedLineId: null,
         panel: 'lines',
       });
       touchNetwork();
+      if (refund > 0) {
+        get().notify(
+          `${orphans.length} unused stop${orphans.length === 1 ? '' : 's'} demolished — ` +
+            `$${(refund / 1000).toFixed(0)}k salvaged.`,
+          'info',
+        );
+      }
       get().saveGame();
     },
 
@@ -686,6 +722,30 @@ export const useGame = create<GameState>((set, get) => {
       }
       set({ depot: { ...s.depot, level: s.depot.level + 1 }, cash: s.cash - cost });
       get().notify(`Depot upgraded to level ${s.depot.level + 1}.`, 'good');
+    },
+
+    upgradeStop: (stopId) => {
+      const s = get();
+      const st = s.stops.find((x) => x.id === stopId);
+      if (!st) return;
+      const next = (st.tier ?? 1) + 1;
+      const cost = STOP_UPGRADE_COST[next];
+      if (!cost) return; // already a full station
+      if (s.cash < cost) {
+        get().notify('Not enough cash.', 'bad');
+        return;
+      }
+      set({
+        cash: s.cash - cost,
+        stops: s.stops.map((x) =>
+          x.id === stopId
+            ? { ...x, tier: next, invested: (x.invested ?? STOP_COST) + cost }
+            : x,
+        ),
+      });
+      touchNetwork();
+      get().notify(`${st.name} upgraded to ${STOP_TIER_NAMES[next]}.`, 'good');
+      get().saveGame();
     },
 
     buyDepotAddon: (addon) => {

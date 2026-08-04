@@ -12,6 +12,7 @@ import {
   MAX_WAIT_MIN,
   MODE_TAU,
   CAPTIVE_SHARE,
+  STOP_TIER_WALK_BONUS,
   SUBSIDY_PER_RIDER,
   TRANSFER_PENALTY_MIN,
   CAR_PARK_PENALTY_MIN,
@@ -44,6 +45,8 @@ interface WLine {
 interface WStop {
   id: string;
   pt: LngLat;
+  /** amenity level 1..3; nicer stops feel closer */
+  tier?: number;
 }
 
 interface InitMsg {
@@ -178,7 +181,11 @@ function computeNetwork(msg: NetworkMsg) {
         for (const si of arr) {
           const dKm = fastKm(c, stops[si].pt);
           if (dKm * 1000 <= MAX_WALK_M && linesAtStop.has(si)) {
-            found.push({ stopIdx: si, walkMin: dKm * WALK_MIN_PER_KM });
+            const bonus = STOP_TIER_WALK_BONUS[stops[si].tier ?? 1] ?? 0;
+            found.push({
+              stopIdx: si,
+              walkMin: Math.max(0.2, dKm * WALK_MIN_PER_KM - bonus),
+            });
           }
         }
       }
@@ -400,13 +407,22 @@ function computeNetwork(msg: NetworkMsg) {
       ? perLine.reduce((s, p) => s + Math.min(p.peakLoadFactor, 1.4), 0) / perLine.length
       : 0;
   const coveragePct = totalPop > 0 ? (covered / totalPop) * 100 : 0;
+  // stop comfort: share of served stops upgraded past a bare sign (0..1)
+  let comfortPts = 0;
+  let servedStops = 0;
+  linesAtStop.forEach((_, si) => {
+    servedStops++;
+    comfortPts += Math.min(2, Math.max(0, (stops[si].tier ?? 1) - 1));
+  });
+  const comfort = servedStops > 0 ? comfortPts / (2 * servedStops) : 0;
   const satisfaction = Math.max(
     0,
     Math.min(
       100,
       coveragePct * 0.45 +
         (1 - Math.min(avgWait, 20) / 20) * 35 +
-        (1 - Math.min(avgLoad, 1.4) / 1.4) * 20,
+        (1 - Math.min(avgLoad, 1.4) / 1.4) * 20 +
+        comfort * 6,
     ),
   );
 

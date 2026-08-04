@@ -2,10 +2,10 @@ import type { BusModelSpec } from './types';
 
 // Economy tuning lives here so balance passes are one-file edits.
 
-// Tight on purpose: covers a level-1 depot ($150k), two city buses
-// ($520k) and a few weeks of wages — build one solid line, then earn
-// the rest (or take the loan).
-export const START_CASH = 700_000;
+// Tight on purpose: covers a level-1 depot ($150k), one Sparrow minibus
+// ($95k), stops for a medium line (~10 x $4k) and a small wage buffer —
+// build one solid starter line, then earn the rest (or take the loan).
+export const START_CASH = 310_000;
 export const LOAN_AMOUNT = 500_000;
 export const LOAN_WEEKLY_INTEREST = 4_000;
 
@@ -16,6 +16,17 @@ export const DEPOT_UPKEEP_PER_DAY: Record<number, number> = { 1: 300, 2: 700, 3:
 export const WORKSHOP_COST = 80_000; // -25% running cost per km
 export const WASH_BAY_COST = 45_000; // +6 satisfaction
 export const CHARGERS_COST = 120_000; // enables electric buses
+
+// Stops are infrastructure too: a pole and sign to start, upgradeable to a
+// shelter and a full station. Nicer stops feel closer/comfier, so they pull
+// riders from a little further out.
+export const STOP_COST = 4_000;
+export const STOP_UPGRADE_COST: Record<number, number> = { 2: 12_000, 3: 35_000 };
+export const STOP_TIER_NAMES: Record<number, string> = {
+  1: 'Sign stop', 2: 'Shelter', 3: 'Station',
+};
+/** perceived minutes shaved off the walk to a stop, by tier */
+export const STOP_TIER_WALK_BONUS: Record<number, number> = { 1: 0, 2: 0.8, 3: 1.8 };
 
 /** the city pays you per boarding on top of the fare (transit contracts!) */
 export const SUBSIDY_PER_RIDER = 1.6;

@@ -1,4 +1,5 @@
 import { useGame } from '../game/store';
+import { STOP_COST } from '../game/constants';
 import { IconCheck, IconClose, IconUndo } from './icons';
 
 /** floating helper bar while drawing a line or placing the depot */
@@ -21,12 +22,14 @@ export function DraftBar() {
     );
   }
   if (tool !== 'line-new' || !draft) return null;
+  const cost = draft.stops.length * STOP_COST;
   return (
     <div className="draftbar">
       <span>
         {draft.stops.length === 0
-          ? 'Click a street to place the first stop'
-          : `${draft.stops.length} stops — keep clicking, or finish`}
+          ? `Click a street to place the first stop ($${STOP_COST / 1000}k each)`
+          : `${draft.stops.length} stops · $${(cost / 1000).toFixed(0)}k to build — ` +
+            'keep clicking, or finish'}
       </span>
       <button className="btn with-icon" onClick={undo} disabled={!draft.stops.length}>
         <IconUndo size={14} /> Undo
