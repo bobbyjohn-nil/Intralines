@@ -1,9 +1,10 @@
 export function fmtMoney(v: number): string {
   const sign = v < 0 ? '-' : '';
   const a = Math.abs(v);
-  if (a >= 1_000_000) return `${sign}$${(a / 1_000_000).toFixed(2)}M`;
-  if (a >= 10_000) return `${sign}$${Math.round(a / 1000)}k`;
-  return `${sign}$${Math.round(a).toLocaleString('en-US')}`;
+  // floor, never round up: the display must not claim money you don't have
+  if (a >= 1_000_000) return `${sign}$${(Math.floor(a / 10_000) / 100).toFixed(2)}M`;
+  if (a >= 10_000) return `${sign}$${Math.floor(a / 1000)}k`;
+  return `${sign}$${Math.floor(a).toLocaleString('en-US')}`;
 }
 
 export function fmtInt(v: number): string {

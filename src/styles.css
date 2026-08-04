@@ -345,6 +345,12 @@ button.chip:hover {
   margin: 0;
 }
 
+.blocker {
+  font-size: 12px;
+  color: #ad5700;
+  margin: 0;
+}
+
 .btn {
   border: 1px solid rgba(60, 55, 40, 0.25);
   background: #fff;

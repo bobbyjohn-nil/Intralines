@@ -344,6 +344,18 @@ function FleetPanel() {
           const assigned = fleetAssigned(lines, m.id);
           const locked = riders < m.unlockRiders;
           const chargerBlock = m.needsCharger && !depot?.chargers;
+          const depotFull = !!depot && fleetTotal(fleet) >= cap;
+          const shortBy = m.price - cash;
+          // exactly one reason shows, in the order a player can fix them
+          const blocker = !depot
+            ? 'Build a depot first.'
+            : depotFull
+              ? 'Depot is full — upgrade it for more parking.'
+              : chargerBlock
+                ? 'Needs chargers — add them in the Depot panel.'
+                : shortBy > 0
+                  ? `Need ${fmtMoney(m.price)} — you're ${fmtMoney(shortBy)} short.`
+                  : null;
           return (
             <div key={m.id} className={`card ${locked ? 'locked' : ''}`}>
               <div className="card-head">
@@ -362,26 +374,29 @@ function FleetPanel() {
                   ({fmtInt(riders)} so far)
                 </p>
               ) : (
-                <div className="btn-row">
-                  <button
-                    className="btn primary"
-                    disabled={cash < m.price || !depot || !!chargerBlock}
-                    title={chargerBlock ? 'Needs depot chargers' : ''}
-                    onClick={() => buyBus(m.id)}
-                  >
-                    Buy
-                  </button>
-                  <button
-                    className="btn"
-                    disabled={owned - assigned <= 0}
-                    onClick={() => sellBus(m.id)}
-                  >
-                    Sell ({fmtMoney(m.price * 0.5)})
-                  </button>
-                  <span className="dim">
-                    {owned} owned · {assigned} on lines
-                  </span>
-                </div>
+                <>
+                  <div className="btn-row">
+                    <button
+                      className="btn primary"
+                      disabled={blocker !== null}
+                      title={blocker ?? `Buy for ${fmtMoney(m.price)}`}
+                      onClick={() => buyBus(m.id)}
+                    >
+                      Buy
+                    </button>
+                    <button
+                      className="btn"
+                      disabled={owned - assigned <= 0}
+                      onClick={() => sellBus(m.id)}
+                    >
+                      Sell ({fmtMoney(m.price * 0.5)})
+                    </button>
+                    <span className="dim">
+                      {owned} owned · {assigned} on lines
+                    </span>
+                  </div>
+                  {blocker && <p className="blocker">{blocker}</p>}
+                </>
               )}
             </div>
           );
@@ -482,10 +497,26 @@ function DepotPanel() {
         <b>{DEPOT_CAPACITY[depot.level]}</b>
       </div>
       {depot.level < 3 && (
-        <button className="btn primary" disabled={cash < nextCost} onClick={upgradeDepot}>
-          Upgrade to level {depot.level + 1} ({fmtMoney(nextCost)}) →{' '}
-          {DEPOT_CAPACITY[depot.level + 1]} buses
-        </button>
+        <>
+          <button
+            className="btn primary"
+            disabled={cash < nextCost}
+            title={
+              cash < nextCost
+                ? `Need ${fmtMoney(nextCost)} — you're ${fmtMoney(nextCost - cash)} short.`
+                : ''
+            }
+            onClick={upgradeDepot}
+          >
+            Upgrade to level {depot.level + 1} ({fmtMoney(nextCost)}) →{' '}
+            {DEPOT_CAPACITY[depot.level + 1]} buses
+          </button>
+          {cash < nextCost && (
+            <p className="blocker">
+              Need {fmtMoney(nextCost)} — you're {fmtMoney(nextCost - cash)} short.
+            </p>
+          )}
+        </>
       )}
       <div className="card">
         <b>Workshop</b>
