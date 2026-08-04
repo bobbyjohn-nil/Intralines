@@ -250,8 +250,9 @@ export class RoadGraph {
     // side streets, like real bus lines. Costs are seconds. Speeds are
     // compressed toward 30 km/h so an arterial is worth a modest detour,
     // never a lap around the block (52 vs 30 km/h ≈ 1.7x raw but only
-    // ~1.3x compressed).
-    const costKmh = (kmh: number) => 30 + (kmh - 30) * 0.5;
+    // ~1.3x compressed). Alleys and living streets (< 25 km/h) cost extra
+    // so routes don't thread parking aprons unless a stop demands it.
+    const costKmh = (kmh: number) => (kmh < 25 ? kmh * 0.7 : 30 + (kmh - 30) * 0.5);
     const MAX_COST_KMH = 66; // costKmh(100), pipeline clamps kmh to <= 100
     const turnPenaltySec = (w: number, u: number, v: number): number => {
       if (w < 0) return 0;

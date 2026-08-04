@@ -57,6 +57,24 @@ interface LineAnim {
   mainShare: number;
   depotPath?: { path: LngLat[]; cum: number[]; lenM: number };
   modelKmh: number;
+  /** congestion multiplier for this corridor at an hour of day */
+  congAt: (hour: number) => number;
+  /**
+   * traffic-adjusted time: tau[i] = profile-minutes elapsed by wall-clock
+   * minute i*TAU_STEP. Continuous and monotonic, so schedules never jump
+   * when congestion ramps up or down — buses just slow down.
+   */
+  tau: Float64Array;
+}
+
+const TAU_STEP = 5; // minutes per tau table entry
+
+function tauAt(a: LineAnim, dayMin: number): number {
+  const m = Math.max(0, Math.min(dayMin, 1440));
+  const i = Math.floor(m / TAU_STEP);
+  const f = m / TAU_STEP - i;
+  const hi = Math.min(i + 1, a.tau.length - 1);
+  return a.tau[i] + (a.tau[hi] - a.tau[i]) * f;
 }
 
 interface StopSite {
@@ -325,6 +343,22 @@ export class BusLayer3D implements CustomLayerInterface {
         meshes.push(g);
       }
       const ex = extras?.get(line.id);
+      const urban = ex?.urban ?? 0.5;
+      const mainShare = ex?.mainShare ?? 0.5;
+      // where the line runs decides how bad traffic gets: downtown arterials
+      // grind to a near-standstill at rush hour, rural side streets barely
+      // notice it
+      const gain = urban * (1.2 + 1.2 * mainShare) + 0.08;
+      const congAt = (hour: number): number => {
+        const base = trafficFactor(hour);
+        const g = base >= 1 ? gain : Math.min(gain, 1);
+        return Math.max(0.55, 1 + (base - 1) * g);
+      };
+      const tau = new Float64Array(1440 / TAU_STEP + 1);
+      for (let i = 1; i < tau.length; i++) {
+        const midHour = ((i - 0.5) * TAU_STEP) / 60;
+        tau[i] = tau[i - 1] + TAU_STEP / congAt(midHour);
+      }
       this.anims.push({
         line,
         vehicles: st.vehiclesUsed,
@@ -335,10 +369,12 @@ export class BusLayer3D implements CustomLayerInterface {
         meshes,
         seed: hash32(line.id.split('').reduce((s, c) => s * 31 + c.charCodeAt(0), 7)),
         intersections: ex?.intersections ?? [],
-        urban: ex?.urban ?? 0.5,
-        mainShare: ex?.mainShare ?? 0.5,
+        urban,
+        mainShare,
         depotPath: ex?.depotPath,
         modelKmh: model.kmh,
+        congAt,
+        tau,
       });
     }
     this.map?.triggerRepaint();
@@ -457,9 +493,12 @@ export class BusLayer3D implements CustomLayerInterface {
   }
 
   private toLocal(pt: LngLat): { x: number; z: number } {
+    // exact web-mercator, not a flat-earth approximation: keeps buses glued
+    // to the rendered streets even far from the map anchor
+    const m = MercatorCoordinate.fromLngLat({ lng: pt[0], lat: pt[1] }, 0);
     return {
-      x: (pt[0] - this.center[0]) * 111320 * this.cosLat,
-      z: -(pt[1] - this.center[1]) * 110540,
+      x: (m.x - this.anchor.x) / this.meterScale,
+      z: (m.y - this.anchor.y) / this.meterScale,
     };
   }
 
@@ -494,20 +533,17 @@ export class BusLayer3D implements CustomLayerInterface {
 
     const servedNow = new Set<string>();
     this.lastFrame = [];
-    const jamBase = congestion; // citywide hour curve
     for (const a of this.anims) {
       const { line } = a;
       const svcStart = line.firstHour * 60;
       const svcEnd = line.lastHour * 60;
-      // where the line runs decides how bad traffic gets: downtown arterials
-      // grind to a near-standstill at rush hour, rural side streets barely
-      // notice it
-      const gain = a.urban * (1.2 + 1.2 * a.mainShare) + 0.08;
-      const cong = 1 + (jamBase - 1) * (jamBase >= 1 ? gain : Math.min(gain, 1));
-      const cycleEff = a.cycleMin * cong;
+      // all scheduling below runs in traffic-adjusted "tau" minutes: the
+      // clock integrates 1/congestion, so when rush hour ramps up buses
+      // smoothly slow down instead of snapping to a rescaled timetable
+      const cong = a.congAt(hour);
+      const tauNow = tauAt(a, dayMin);
       const dp = a.depotPath;
       const deadMin = dp ? (dp.lenM / 1000 / a.modelKmh) * 60 + 0.2 : 0;
-      const deadDur = deadMin * cong;
       for (let k = 0; k < a.vehicles; k++) {
         const mesh = a.meshes[k];
         const firstDep = svcStart + k * a.headwayEff;
@@ -522,19 +558,20 @@ export class BusLayer3D implements CustomLayerInterface {
           this.lastFrame.push({ line: line.id, k, pt: null, visible: false });
           continue;
         }
-        if (dp && dayMin >= firstDep - deadDur && dayMin < firstDep) {
+        const tauDep = tauAt(a, firstDep);
+        if (dp && tauNow >= tauDep - deadMin && tauNow < tauDep) {
           // pull-out: rolls from the depot to the first stop before service
-          const tSec = ((dayMin - (firstDep - deadDur)) / cong) * 60;
+          const tSec = (tauNow - (tauDep - deadMin)) * 60;
           const d = kinematicDist(dp.lenM, deadMin * 60, tSec);
           const { pt, bearing } = this.bearingAlong(dp.path, dp.cum, dp.lenM, d, true);
           hit = { pt, bearing, lineD: null };
-        } else if (dayMin >= firstDep) {
-          const since = dayMin - firstDep;
-          const lastDepartureCutoff = svcEnd - firstDep;
-          const cycleIdx = Math.floor(since / cycleEff);
-          const cycleStart = cycleIdx * cycleEff;
+        } else if (tauNow >= tauDep) {
+          const since = tauNow - tauDep;
+          const lastDepartureCutoff = tauAt(a, svcEnd) - tauDep;
+          const cycleIdx = Math.floor(since / a.cycleMin);
+          const cycleStart = cycleIdx * a.cycleMin;
           if (cycleStart <= lastDepartureCutoff) {
-            const tProfile = (since - cycleStart) / cong;
+            const tProfile = since - cycleStart;
             const pos = this.distAt(a, tProfile, cycleIdx, k, cong);
             if (pos) {
               const { pt, bearing } = this.smoothBearing(line, pos.d, pos.forward);
@@ -542,10 +579,10 @@ export class BusLayer3D implements CustomLayerInterface {
             }
           } else if (dp) {
             // service over: one last drive home to the depot
-            const lastIdx = Math.floor(lastDepartureCutoff / cycleEff);
-            const tHome = since - (lastIdx + 1) * cycleEff;
-            if (tHome >= 0 && tHome < deadDur) {
-              const tSec = (tHome / cong) * 60;
+            const lastIdx = Math.floor(lastDepartureCutoff / a.cycleMin);
+            const tHome = since - (lastIdx + 1) * a.cycleMin;
+            if (tHome >= 0 && tHome < deadMin) {
+              const tSec = tHome * 60;
               const d = kinematicDist(dp.lenM, deadMin * 60, tSec);
               const { pt, bearing } = this.bearingAlong(
                 dp.path, dp.cum, dp.lenM, dp.lenM - d, false,

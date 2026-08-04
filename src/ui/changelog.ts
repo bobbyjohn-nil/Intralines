@@ -8,6 +8,16 @@ export interface LogEntry {
 
 export const CHANGELOG: LogEntry[] = [
   {
+    version: '0.9',
+    date: 'Aug 4, 2026',
+    title: 'Glued to the road',
+    items: [
+      'Buses sit exactly on their line everywhere on the map — positions now use true map projection instead of a flat-earth shortcut that drifted a few meters near the city edges.',
+      'No more teleporting: schedules run on a traffic-adjusted clock, so when rush hour ramps up buses smoothly slow down instead of snapping to a rescaled timetable.',
+      'Routes stop cutting through alleys and parking aprons — very slow minor ways now cost what they deserve.',
+    ],
+  },
+  {
     version: '0.8',
     date: 'Aug 4, 2026',
     title: 'Sharper demand',
