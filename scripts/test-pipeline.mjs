@@ -69,6 +69,46 @@ const BBOX = [-71.9, 42.2, -71.7, 42.36];
   assert.equal(g.edges.length, 1, 'missing-node way dropped; smaller component dropped');
 }
 
+// --- junction healing: stub ending a few meters short gets connected --------
+{
+  // horizontal street 1-2; vertical stub 10-11 whose south end stops ~5.5 m
+  // above the street (no shared node = the classic OSM digitization gap)
+  const overpass = {
+    elements: [
+      { type: 'node', id: 1, lon: -71.80, lat: 42.30 },
+      { type: 'node', id: 2, lon: -71.78, lat: 42.30 },
+      { type: 'node', id: 10, lon: -71.79, lat: 42.31 },
+      { type: 'node', id: 11, lon: -71.79, lat: 42.30005 },
+      { type: 'way', id: 300, nodes: [1, 2], tags: { highway: 'residential', name: 'Long St' } },
+      { type: 'way', id: 301, nodes: [10, 11], tags: { highway: 'residential' } },
+    ],
+  };
+  const g = buildRoadGraph(overpass, BBOX);
+  assert.equal(g.nodes.length, 5, 'street kept + stub kept + split node added');
+  assert.equal(g.edges.length, 4, 'street split in two + stub + connector');
+  const named = g.edges.filter((e) => e.name === 'Long St');
+  assert.equal(named.length, 2, 'both split halves keep the street name');
+  const conn = g.edges.find((e) => e.pts.length === 0 && e.lenM <= 9 && !e.name);
+  assert.ok(conn, 'short connector edge added across the gap');
+}
+
+// --- junction healing: a 30 m gap is a real dead end, not a data error ------
+{
+  const overpass = {
+    elements: [
+      { type: 'node', id: 1, lon: -71.80, lat: 42.30 },
+      { type: 'node', id: 2, lon: -71.78, lat: 42.30 },
+      { type: 'node', id: 10, lon: -71.79, lat: 42.31 },
+      { type: 'node', id: 11, lon: -71.79, lat: 42.30027 },
+      { type: 'way', id: 300, nodes: [1, 2], tags: { highway: 'residential' } },
+      { type: 'way', id: 301, nodes: [10, 11], tags: { highway: 'residential' } },
+    ],
+  };
+  const g = buildRoadGraph(overpass, BBOX);
+  assert.equal(g.edges.length, 1, 'unhealed stub falls to the component filter');
+  assert.equal(g.nodes.length, 2, 'only the street survives');
+}
+
 // --- ring stitching (multipolygon lakes) -------------------------------------
 {
   const a = [[0, 0], [1, 0], [1, 1]];

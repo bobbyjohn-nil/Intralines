@@ -5,7 +5,7 @@
 const DB_NAME = 'intralines';
 const OLD_DB_NAME = 'transit-lines';
 const STORE = 'cityPacks';
-export const PACK_FORMAT_VERSION = 3; // v3: street names on edges
+export const PACK_FORMAT_VERSION = 4; // v4: healed near-miss junctions
 
 function open(name: string): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {

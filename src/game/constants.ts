@@ -2,7 +2,10 @@ import type { BusModelSpec } from './types';
 
 // Economy tuning lives here so balance passes are one-file edits.
 
-export const START_CASH = 900_000;
+// Tight on purpose: covers a level-1 depot ($150k), two city buses
+// ($520k) and a few weeks of wages — build one solid line, then earn
+// the rest (or take the loan).
+export const START_CASH = 700_000;
 export const LOAN_AMOUNT = 500_000;
 export const LOAN_WEEKLY_INTEREST = 4_000;
 

@@ -200,7 +200,7 @@ export class RoadGraph {
     const prevEdge = new Int32Array(n).fill(-1);
     const goal = this.pack.nodes[to];
     const h = (i: number) =>
-      (fastDistM(this.pack.nodes[i], goal, this.cosLat) / (MAX_KMH / 3.6));
+      (fastDistM(this.pack.nodes[i], goal, this.cosLat) / (MAX_COST_KMH / 3.6));
 
     // binary heap of [f, node]
     const heap: number[] = [];
@@ -241,8 +241,12 @@ export class RoadGraph {
     };
 
     // travel-time routing: buses prefer faster arterials over shortcut
-    // side streets, like real bus lines. Costs are seconds.
-    const MAX_KMH = 100;
+    // side streets, like real bus lines. Costs are seconds. Speeds are
+    // compressed toward 30 km/h so an arterial is worth a modest detour,
+    // never a lap around the block (52 vs 30 km/h ≈ 1.7x raw but only
+    // ~1.3x compressed).
+    const costKmh = (kmh: number) => 30 + (kmh - 30) * 0.5;
+    const MAX_COST_KMH = 66; // costKmh(100), pipeline clamps kmh to <= 100
     const turnPenaltySec = (w: number, u: number, v: number): number => {
       if (w < 0) return 0;
       const A = this.pack.nodes[w];
@@ -255,7 +259,7 @@ export class RoadGraph {
       if (deg < 30) return 0;
       if (deg < 70) return 4;
       if (deg < 120) return 10;
-      return 25; // sharp turns / U-turns
+      return 14; // sharp turns / U-turns
     };
 
     dist[from] = 0;
@@ -268,7 +272,7 @@ export class RoadGraph {
       closed[u] = 1;
       for (const { to: v, edge, lenM } of this.adj[u]) {
         const kmh = this.pack.edges[edge].kmh || 30;
-        const travelSec = lenM / (kmh / 3.6);
+        const travelSec = lenM / (costKmh(kmh) / 3.6);
         const nd = dist[u] + travelSec + turnPenaltySec(prev[u], u, v);
         if (nd < dist[v]) {
           dist[v] = nd;

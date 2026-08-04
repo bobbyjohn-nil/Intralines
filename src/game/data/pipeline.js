@@ -194,6 +194,8 @@ export function buildRoadGraph(overpass, bbox) {
     }
   }
 
+  healJunctions(nodes, edges);
+
   // largest connected component
   const adj = Array.from({ length: nodes.length }, () => []);
   edges.forEach((e, i) => {
@@ -229,6 +231,133 @@ export function buildRoadGraph(overpass, bbox) {
     .filter((e) => comp[e.a] === bestC && comp[e.b] === bestC)
     .map((e) => ({ ...e, a: remap[e.a], b: remap[e.b] }));
   return { nodes: outNodes, edges: outEdges };
+}
+
+/**
+ * Connect dead-end street stubs to a road they almost touch (<= 8 m).
+ * OSM sometimes digitizes a side street ending a few meters short of the
+ * avenue it joins; without this the router loops a whole block to reach a
+ * stop just past the invisible gap. Runs before the largest-component
+ * filter so neighborhoods hanging off a healed joint are kept. The radius
+ * is small on purpose: genuine cul-de-sacs and grade-separated crossings
+ * stay unconnected. Mutates nodes/edges in place.
+ */
+const HEAL_M = 8;
+function healJunctions(nodes, edges) {
+  if (!nodes.length || !edges.length) return;
+  const degree = new Uint32Array(nodes.length);
+  for (const e of edges) {
+    degree[e.a]++;
+    degree[e.b]++;
+  }
+  const cosLat = Math.cos((nodes[0][1] * Math.PI) / 180);
+  const mx = 111320 * cosLat;
+  const my = 110540;
+  // bucket edge chain segments on a coarse grid for the near lookup
+  const CELL = 0.0008;
+  const buckets = new Map();
+  const key = (cx, cy) => `${cx}:${cy}`;
+  const snapshot = edges.length;
+  for (let i = 0; i < snapshot; i++) {
+    const e = edges[i];
+    const chain = [nodes[e.a], ...e.pts, nodes[e.b]];
+    for (let s = 0; s < chain.length - 1; s++) {
+      const a = chain[s];
+      const b = chain[s + 1];
+      // sample along the segment so every grid cell it crosses knows it
+      const steps = Math.max(
+        1,
+        Math.ceil(Math.max(Math.abs(b[0] - a[0]), Math.abs(b[1] - a[1])) / (CELL * 0.9)),
+      );
+      for (let k = 0; k <= steps; k++) {
+        const t = k / steps;
+        const cx = Math.floor((a[0] + (b[0] - a[0]) * t) / CELL);
+        const cy = Math.floor((a[1] + (b[1] - a[1]) * t) / CELL);
+        const kk = key(cx, cy);
+        let bk = buckets.get(kk);
+        if (!bk) buckets.set(kk, (bk = new Set()));
+        bk.add(i);
+      }
+    }
+  }
+  for (let n = 0; n < degree.length; n++) {
+    if (degree[n] !== 1) continue;
+    const p = nodes[n];
+    const cx = Math.floor(p[0] / CELL);
+    const cy = Math.floor(p[1] / CELL);
+    const cand = new Set();
+    for (let dx = -1; dx <= 1; dx++) {
+      for (let dy = -1; dy <= 1; dy++) {
+        const b = buckets.get(key(cx + dx, cy + dy));
+        if (b) for (const i of b) cand.add(i);
+      }
+    }
+    let best = null;
+    for (const ei of cand) {
+      const e = edges[ei];
+      if (e.a === n || e.b === n) continue;
+      const chain = [nodes[e.a], ...e.pts, nodes[e.b]];
+      let along = 0;
+      for (let s = 0; s < chain.length - 1; s++) {
+        const a = chain[s];
+        const b = chain[s + 1];
+        const bx = (b[0] - a[0]) * mx;
+        const by = (b[1] - a[1]) * my;
+        const segLen = Math.hypot(bx, by);
+        if (segLen < 0.5) continue;
+        const px = (p[0] - a[0]) * mx;
+        const py = (p[1] - a[1]) * my;
+        const t = Math.max(0, Math.min(1, (px * bx + py * by) / (segLen * segLen)));
+        const d = Math.hypot(px - bx * t, py - by * t);
+        if (d <= HEAL_M && (!best || d < best.d)) {
+          best = {
+            ei, d,
+            alongM: along + segLen * t,
+            proj: [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t],
+          };
+        }
+        along += segLen;
+      }
+    }
+    if (!best) continue;
+    const e = edges[best.ei];
+    const stubKmh = edges.find((x) => x.a === n || x.b === n)?.kmh ?? 30;
+    let target;
+    if (best.alongM < 10) target = e.a;
+    else if (e.lenM - best.alongM < 10) target = e.b;
+    else {
+      // split the target edge at the projection
+      const chain = [nodes[e.a], ...e.pts, nodes[e.b]];
+      const ptsA = [];
+      const ptsB = [];
+      let along = 0;
+      let placed = false;
+      for (let s = 0; s < chain.length - 1; s++) {
+        const a = chain[s];
+        const b = chain[s + 1];
+        const segLen = Math.hypot((b[0] - a[0]) * mx, (b[1] - a[1]) * my);
+        if (!placed && along + segLen >= best.alongM - 0.01) placed = true;
+        else if (!placed) ptsA.push(b);
+        else ptsB.push(a);
+        along += segLen;
+      }
+      target = nodes.length;
+      nodes.push([best.proj[0], best.proj[1]]);
+      const oldB = e.b;
+      const oldLen = e.lenM;
+      const half = {
+        a: target, b: oldB, lenM: Math.max(1, Math.round(oldLen - best.alongM)),
+        kmh: e.kmh, pts: ptsB,
+      };
+      if (e.name) half.name = e.name;
+      e.b = target;
+      e.pts = ptsA;
+      e.lenM = Math.max(1, Math.round(best.alongM));
+      edges.push(half);
+    }
+    if (target === n) continue;
+    edges.push({ a: n, b: target, lenM: Math.max(1, Math.round(best.d)), kmh: stubKmh, pts: [] });
+  }
 }
 
 /**
