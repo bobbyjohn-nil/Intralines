@@ -12,44 +12,16 @@ import type { ExpressionSpecification } from 'maplibre-gl';
 export type HeatMode = 'pop' | 'jobs' | 'tour' | 'edu';
 
 /**
- * Color ramps for the demand heatmap. Deliberately translucent (nothing
- * above ~0.5 alpha) with a hole below 0.18 density and steep mid stops, so
- * hotspots read as defined cores instead of one washed-out blob.
+ * Demand dot colors: translucent fill, crisp solid outline — sharp-edged
+ * circles instead of fuzzy heat blobs, so even a lone pocket of demand out
+ * past the city limits reads clearly.
  * purple = residents, teal = jobs, amber = tourism, blue = education.
  */
-const HEAT_COLORS: Record<HeatMode, ExpressionSpecification> = {
-  pop: [
-    'interpolate', ['linear'], ['heatmap-density'],
-    0, 'rgba(122,88,224,0)',
-    0.18, 'rgba(139,106,232,0.05)',
-    0.4, 'rgba(122,84,224,0.28)',
-    0.7, 'rgba(103,63,211,0.42)',
-    1, 'rgba(82,44,180,0.52)',
-  ],
-  jobs: [
-    'interpolate', ['linear'], ['heatmap-density'],
-    0, 'rgba(16,128,148,0)',
-    0.18, 'rgba(22,148,168,0.05)',
-    0.4, 'rgba(16,128,150,0.28)',
-    0.7, 'rgba(12,106,128,0.44)',
-    1, 'rgba(8,84,104,0.54)',
-  ],
-  tour: [
-    'interpolate', ['linear'], ['heatmap-density'],
-    0, 'rgba(224,123,57,0)',
-    0.18, 'rgba(228,138,74,0.05)',
-    0.4, 'rgba(219,116,44,0.28)',
-    0.7, 'rgba(198,94,26,0.44)',
-    1, 'rgba(168,72,14,0.54)',
-  ],
-  edu: [
-    'interpolate', ['linear'], ['heatmap-density'],
-    0, 'rgba(47,111,208,0)',
-    0.18, 'rgba(72,130,216,0.05)',
-    0.4, 'rgba(47,111,208,0.28)',
-    0.7, 'rgba(30,88,180,0.44)',
-    1, 'rgba(18,64,142,0.54)',
-  ],
+const HEAT_COLORS: Record<HeatMode, { fill: string; stroke: string }> = {
+  pop: { fill: '#7a54e0', stroke: '#5230b8' },
+  jobs: { fill: '#0e7a92', stroke: '#075a6e' },
+  tour: { fill: '#db742c', stroke: '#a8480e' },
+  edu: { fill: '#2f6fd0', stroke: '#1a4b9e' },
 };
 
 export function ensureOverlays(map: MLMap): void {
@@ -61,29 +33,31 @@ export function ensureOverlays(map: MLMap): void {
   );
 
   if (!map.getLayer('heatmap-blob')) {
-    // a true smooth heatmap over block-group centroids (soft general areas,
-    // not hard census-block edges), slid underneath roads + buildings
+    // crisp translucent demand dots over block-group centroids, slid
+    // underneath roads + buildings. Radius scales with demand but never
+    // shrinks below a clearly visible floor.
     const layers = map.getStyle().layers ?? [];
     const beforeId = layers.find(
       (l) => l.id.startsWith('road') || l.id.startsWith('building'),
     )?.id;
+    const f: ExpressionSpecification = ['+', 0.45, ['get', 'w']]; // 0.45..1.45
     map.addLayer(
       {
         id: 'heatmap-blob',
-        type: 'heatmap',
+        type: 'circle',
         source: 'heatmap-src',
         paint: {
-          'heatmap-weight': ['get', 'w'],
-          'heatmap-intensity': [
-            'interpolate', ['linear'], ['zoom'], 10, 1.5, 13, 2.5, 16, 3.4,
+          'circle-radius': [
+            'interpolate', ['exponential', 1.7], ['zoom'],
+            10, ['*', 3.5, f],
+            13, ['*', 9, f],
+            16, ['*', 24, f],
           ],
-          // tighter radius: defined cores around real hotspots, not one
-          // city-wide wash
-          'heatmap-radius': [
-            'interpolate', ['exponential', 1.6], ['zoom'], 10, 12, 12, 26, 14, 52, 16, 100,
-          ],
-          'heatmap-opacity': 0.62,
-          'heatmap-color': HEAT_COLORS.pop,
+          'circle-color': HEAT_COLORS.pop.fill,
+          'circle-opacity': 0.34,
+          'circle-stroke-color': HEAT_COLORS.pop.stroke,
+          'circle-stroke-width': 1.4,
+          'circle-stroke-opacity': 0.85,
         },
       },
       beforeId,
@@ -217,18 +191,24 @@ export function updateHeatmap(
   const norm = positive[Math.floor(positive.length * 0.92)] || 1;
   // people live everywhere, so the residents layer keeps a low floor; the
   // workplace-style layers cut harder so scattered corner-store jobs don't
-  // paint whole residential neighborhoods as work demand
-  const cut = mode === 'pop' ? 0.06 : 0.16;
-  const features = pack.blockGroups.map((bg, i) => {
+  // paint whole residential neighborhoods as work demand. Cells above the
+  // cut become dots with a minimum size, so a small satellite town's
+  // demand is just as legible as downtown's.
+  const cut = mode === 'pop' ? 0.03 : 0.12;
+  const features = pack.blockGroups.flatMap((bg, i) => {
     const rel = dens[i] / norm;
-    return {
-      type: 'Feature' as const,
-      properties: { w: rel < cut ? 0 : Math.pow(Math.min(rel, 1), 0.75) },
-      geometry: { type: 'Point' as const, coordinates: bg.centroid },
-    };
+    if (rel < cut) return [];
+    return [
+      {
+        type: 'Feature' as const,
+        properties: { w: Math.pow(Math.min(rel, 1), 0.75) },
+        geometry: { type: 'Point' as const, coordinates: bg.centroid },
+      },
+    ];
   });
   if (map.getLayer('heatmap-blob')) {
-    map.setPaintProperty('heatmap-blob', 'heatmap-color', HEAT_COLORS[mode]);
+    map.setPaintProperty('heatmap-blob', 'circle-color', HEAT_COLORS[mode].fill);
+    map.setPaintProperty('heatmap-blob', 'circle-stroke-color', HEAT_COLORS[mode].stroke);
   }
   setData(map, 'heatmap-src', { type: 'FeatureCollection', features });
 }

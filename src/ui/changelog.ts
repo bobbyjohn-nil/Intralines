@@ -15,6 +15,14 @@ export interface LogEntry {
 
 export const CHANGELOG: LogEntry[] = [
   {
+    version: '1.2',
+    date: 'Aug 4, 2026',
+    title: 'Demand you can count',
+    items: [
+      'Demand layers redrawn as crisp translucent dots with sharp outlines — no more fuzzy heat blobs. Dot size scales with demand but never below a clearly visible floor, so a small town or lone pocket outside the city limits reads just as clearly as downtown.',
+    ],
+  },
+  {
     version: '1.1',
     date: 'Aug 4, 2026',
     title: 'Rules of the road',
