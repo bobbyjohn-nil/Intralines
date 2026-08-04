@@ -8,7 +8,14 @@ import type { CityMeta, SaveGame } from '../game/types';
 import { BusSide, IconUpload } from './icons';
 import { CHANGELOG } from './changelog';
 
-type Tab = 'play' | 'saves' | 'settings' | 'log';
+type View = 'root' | 'play' | 'saves' | 'settings' | 'log';
+
+const VIEW_TITLES: Record<Exclude<View, 'root'>, string> = {
+  play: 'Choose a city',
+  saves: 'Saved games',
+  settings: 'Settings',
+  log: 'Changelog',
+};
 
 interface SaveRow {
   meta: CityMeta;
@@ -57,7 +64,7 @@ export function Menu() {
   const error = useGame((s) => s.menuError);
   const setError = useGame((s) => s.setMenuError);
   const [cached, setCached] = useState<Record<string, boolean>>({});
-  const [tab, setTab] = useState<Tab>('play');
+  const [view, setView] = useState<View>('root');
   const [saves, setSaves] = useState<SaveRow[]>(() => readSaves());
 
   useEffect(() => {
@@ -87,62 +94,96 @@ export function Menu() {
     }
   }
 
+  const go = (v: View) => {
+    if (v === 'saves') setSaves(readSaves());
+    setView(v);
+  };
+
   return (
     <div className="menu">
       <div className="menu-inner">
-        <h1 className="logo-row">
-          <span className="logo-mark"><BusSide length={1} size={54} /></span>
-          Intralines Bus Simulator
-          <span className="ver-chip">v{CHANGELOG[0].version}</span>
-        </h1>
-        <p className="tagline">
-          Build a bus company on a real city. Real streets, real census commuters — draw
-          smart lines, run a tight depot, watch your buses roll.
-        </p>
-
-        <div className="menu-tabs" role="tablist">
-          {(
-            [
-              ['play', 'Play'],
-              ['saves', 'Saves'],
-              ['settings', 'Settings'],
-              ['log', 'Changelog'],
-            ] as [Tab, string][]
-          ).map(([id, label]) => (
-            <button
-              key={id}
-              role="tab"
-              aria-selected={tab === id}
-              className={tab === id ? 'on' : ''}
-              onClick={() => {
-                setTab(id);
-                if (id === 'saves') setSaves(readSaves());
-              }}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-
-        {error && <p className="menu-error">{error}</p>}
-
-        {tab === 'play' && <PlayTab cached={cached} start={start} />}
-        {tab === 'saves' && (
-          <SavesTab saves={saves} refresh={() => setSaves(readSaves())} start={start} />
+        {view === 'root' ? (
+          <div className="menu-root">
+            <div className="menu-hero">
+              <h1 className="logo-row">
+                <span className="logo-mark"><BusSide length={1} size={54} /></span>
+                Intralines Bus Simulator
+              </h1>
+              <p className="tagline">
+                Build a bus company on a real city. Real streets, real census commuters —
+                draw smart lines, run a tight depot, watch your buses roll.
+              </p>
+              {error && <p className="menu-error">{error}</p>}
+            </div>
+            <nav className="menu-nav">
+              <button className="nav-strip" onClick={() => go('play')}>
+                <span className="nav-text">
+                  <span className="nav-label">Play</span>
+                  <span className="nav-desc">Pick a city and get your buses rolling</span>
+                </span>
+                <span className="nav-side">
+                  {saves.length > 0 && <span className="nav-hint">{saves.length} in progress</span>}
+                  <span className="nav-chev">›</span>
+                </span>
+              </button>
+              <button className="nav-strip" onClick={() => go('saves')}>
+                <span className="nav-text">
+                  <span className="nav-label">Saves</span>
+                  <span className="nav-desc">Continue, back up or import a company</span>
+                </span>
+                <span className="nav-side">
+                  <span className="nav-chev">›</span>
+                </span>
+              </button>
+              <button className="nav-strip" onClick={() => go('settings')}>
+                <span className="nav-text">
+                  <span className="nav-label">Settings</span>
+                  <span className="nav-desc">Basemap, downloaded data, resets</span>
+                </span>
+                <span className="nav-side">
+                  <span className="nav-chev">›</span>
+                </span>
+              </button>
+              <button className="nav-strip" onClick={() => go('log')}>
+                <span className="nav-text">
+                  <span className="nav-label">Changelog</span>
+                  <span className="nav-desc">What's new in the game</span>
+                </span>
+                <span className="nav-side">
+                  <span className="nav-hint">v{CHANGELOG[0].version}</span>
+                  <span className="nav-chev">›</span>
+                </span>
+              </button>
+            </nav>
+          </div>
+        ) : (
+          <div className="menu-page">
+            <div className="page-head">
+              <button className="btn back" onClick={() => setView('root')}>
+                ‹ Back
+              </button>
+              <h2>{VIEW_TITLES[view]}</h2>
+            </div>
+            {error && <p className="menu-error">{error}</p>}
+            {view === 'play' && <PlayTab cached={cached} start={start} />}
+            {view === 'saves' && (
+              <SavesTab saves={saves} refresh={() => setSaves(readSaves())} start={start} />
+            )}
+            {view === 'settings' && (
+              <SettingsTab
+                cached={cached}
+                setCached={setCached}
+                refreshSaves={() => setSaves(readSaves())}
+              />
+            )}
+            {view === 'log' && <LogTab />}
+          </div>
         )}
-        {tab === 'settings' && (
-          <SettingsTab
-            cached={cached}
-            setCached={setCached}
-            refreshSaves={() => setSaves(readSaves())}
-          />
-        )}
-        {tab === 'log' && <LogTab />}
 
         <p className="menu-foot">
-          Real-city mode uses live data from the US Census Bureau (ACS population, LEHD LODES
-          workplaces, TIGERweb boundaries) and OpenStreetMap. Map tiles © OpenFreeMap /
-          OpenMapTiles / OpenStreetMap contributors.
+          v{CHANGELOG[0].version} · Real-city mode uses live data from the US Census Bureau
+          (ACS population, LEHD LODES workplaces, TIGERweb boundaries) and OpenStreetMap.
+          Map tiles © OpenFreeMap / OpenMapTiles / OpenStreetMap contributors.
         </p>
       </div>
     </div>
