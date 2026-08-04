@@ -10,6 +10,30 @@ export function DraftBar() {
   const cancel = useGame((s) => s.cancelDraft);
   const finish = useGame((s) => s.finishDraft);
   const setTool = useGame((s) => s.setTool);
+  const moveStopId = useGame((s) => s.moveStopId);
+  const stops = useGame((s) => s.stops);
+  const requestMoveStop = useGame((s) => s.requestMoveStop);
+
+  if (tool === 'route-edit') {
+    const moving = moveStopId ? stops.find((x) => x.id === moveStopId) : null;
+    return (
+      <div className="draftbar">
+        <span>
+          {moving
+            ? `Click a street to move ${moving.name}`
+            : `Editing route — click a street to add a stop ($${STOP_COST / 1000}k each)`}
+        </span>
+        {moving && (
+          <button className="btn with-icon" onClick={() => requestMoveStop(null)}>
+            <IconClose size={14} /> Cancel move
+          </button>
+        )}
+        <button className="btn primary with-icon" onClick={() => setTool('select')}>
+          <IconCheck size={14} /> Done
+        </button>
+      </div>
+    );
+  }
 
   if (tool === 'depot-place') {
     return (

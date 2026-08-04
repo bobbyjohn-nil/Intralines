@@ -8,6 +8,16 @@ export interface LogEntry {
 
 export const CHANGELOG: LogEntry[] = [
   {
+    version: '1.0',
+    date: 'Aug 4, 2026',
+    title: 'Route surgery',
+    items: [
+      'Routes are editable after creation: open a line and hit "Edit route" — click the map to add stops (inserted where they fit best, $4k for brand-new ones, free to reuse existing stops).',
+      'Every stop in the route editor is listed in order by its street name, with Move (click the map to relocate it) and Remove buttons alongside the upgrade.',
+      'Moved stops pick up their new street name and every line through them reroutes; stops no line uses anymore are demolished for half their investment back.',
+    ],
+  },
+  {
     version: '0.9',
     date: 'Aug 4, 2026',
     title: 'Glued to the road',

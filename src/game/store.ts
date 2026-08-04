@@ -76,6 +76,8 @@ export interface GameState {
   basemapActive: 'online' | 'offline';
   /** city-load failure shown on the menu (survives the menu remounting) */
   menuError: string | null;
+  /** stop waiting for a relocation click while the route editor is active */
+  moveStopId: string | null;
 
   // actions
   openCity: (pack: CityPack) => void;
@@ -105,6 +107,8 @@ export interface GameState {
   buildDepot: (pt: LngLat) => void;
   upgradeDepot: () => void;
   upgradeStop: (stopId: string) => void;
+  removeStopFromLine: (lineId: string, stopId: string) => void;
+  requestMoveStop: (stopId: string | null) => void;
   buyDepotAddon: (addon: 'workshop' | 'washBay' | 'chargers') => void;
   takeLoan: () => void;
   repayLoan: () => void;
@@ -162,6 +166,52 @@ export function driversNeeded(lines: BusLine[]): number {
 
 export function busModel(id: string) {
   return BUS_MODELS.find((m) => m.id === id) ?? BUS_MODELS[0];
+}
+
+/** street-following geometry for an ordered stop sequence (null = unroutable) */
+function computeLinePath(
+  graph: RoadGraph,
+  stopsById: Map<string, Stop>,
+  stopIds: string[],
+  cosLat: number,
+): Pick<BusLine, 'path' | 'cum' | 'stopDist' | 'pathLenM'> | null {
+  if (stopIds.length < 2) return null;
+  const path: LngLat[] = [];
+  const stopDist = [0];
+  let acc = 0;
+  for (let i = 1; i < stopIds.length; i++) {
+    const a = stopsById.get(stopIds[i - 1]);
+    const b = stopsById.get(stopIds[i]);
+    if (!a || !b) return null;
+    const r = graph.route(a.node, b.node);
+    if (!r || r.path.length < 2) return null;
+    if (!path.length) path.push(...r.path);
+    else for (let k = 1; k < r.path.length; k++) path.push(r.path[k]);
+    acc += r.lenM;
+    stopDist.push(acc);
+  }
+  return { path, cum: cumulativeDist(path, cosLat), stopDist, pathLenM: acc };
+}
+
+/** where a new stop fits best into an existing line (0..n insertion index) */
+function bestInsertIndex(line: BusLine, pt: LngLat, cosLat: number): number {
+  let bestLeg = 0;
+  let bestD = Infinity;
+  let leg = 0;
+  for (let i = 0; i < line.path.length; i++) {
+    while (leg < line.stopDist.length - 2 && line.cum[i] > line.stopDist[leg + 1] + 1) leg++;
+    const d = fastDistM(line.path[i], pt, cosLat);
+    if (d < bestD) {
+      bestD = d;
+      bestLeg = leg;
+    }
+  }
+  // clicks out past a terminal extend the line instead of kinking the end leg
+  const dStart = fastDistM(line.path[0], pt, cosLat);
+  const dEnd = fastDistM(line.path[line.path.length - 1], pt, cosLat);
+  if (dStart <= bestD + 1) return 0;
+  if (dEnd <= bestD + 1) return line.stopIds.length;
+  return bestLeg + 1;
 }
 
 export const useGame = create<GameState>((set, get) => {
@@ -260,6 +310,7 @@ export const useGame = create<GameState>((set, get) => {
       'zoom',
     basemapActive: 'offline',
     menuError: null,
+    moveStopId: null,
 
     openCity: (pack) => {
       worker?.terminate();
@@ -426,7 +477,12 @@ export const useGame = create<GameState>((set, get) => {
         get().notify('Build a depot first — your buses need a home.', 'bad');
         return;
       }
-      set({ tool: t, draft: t === 'line-new' ? { stops: [], legs: [] } : null, panel: t === 'line-new' ? 'line-edit' : s.panel });
+      set({
+        tool: t,
+        draft: t === 'line-new' ? { stops: [], legs: [] } : null,
+        panel: t === 'line-new' ? 'line-edit' : s.panel,
+        moveStopId: t === 'route-edit' ? s.moveStopId : null,
+      });
     },
 
     setPanel: (p) => set({ panel: p }),
@@ -461,6 +517,131 @@ export const useGame = create<GameState>((set, get) => {
 
       if (s.tool === 'depot-place') {
         get().buildDepot(pt);
+        return;
+      }
+
+      if (s.tool === 'route-edit') {
+        const line = s.lines.find((l) => l.id === s.selectedLineId);
+        if (!line) {
+          set({ tool: 'select', moveStopId: null });
+          return;
+        }
+        const cosLat = Math.cos((s.pack.meta.center[1] * Math.PI) / 180);
+
+        if (s.moveStopId) {
+          // relocate the chosen stop to the clicked street
+          const stop = s.stops.find((x) => x.id === s.moveStopId);
+          if (!stop) {
+            set({ moveStopId: null });
+            return;
+          }
+          const node = s.graph.insertStopNode(pt, 240);
+          if (node === null) {
+            get().notify('Too far from a road — click closer to a street.', 'bad');
+            return;
+          }
+          if (s.stops.some((x) => x.id !== stop.id && x.node === node)) {
+            get().notify('There is already a stop there.', 'bad');
+            return;
+          }
+          const moved: Stop = {
+            ...stop,
+            node,
+            pt: s.graph.pack.nodes[node],
+            name: s.graph.stopNameAt(node) ?? stop.name,
+          };
+          const stops = s.stops.map((x) => (x.id === stop.id ? moved : x));
+          const sm = new Map(stops.map((x) => [x.id, x]));
+          const affected = s.lines.filter((l) => l.stopIds.includes(stop.id));
+          const patches = new Map<string, ReturnType<typeof computeLinePath>>();
+          for (const l of affected) {
+            const geo = computeLinePath(s.graph, sm, l.stopIds, cosLat);
+            if (!geo) {
+              get().notify(`No street path for ${l.name} with the stop there.`, 'bad');
+              return;
+            }
+            patches.set(l.id, geo);
+          }
+          set({
+            stops,
+            lines: s.lines.map((l) => {
+              const geo = patches.get(l.id);
+              return geo ? { ...l, ...geo } : l;
+            }),
+            moveStopId: null,
+          });
+          touchNetwork();
+          get().notify(
+            `${moved.name} moved` +
+              (affected.length > 1 ? ` — ${affected.length} lines rerouted.` : '.'),
+            'good',
+          );
+          get().saveGame();
+          return;
+        }
+
+        // add a stop: reuse one nearby, otherwise build a new one ($4k)
+        let stop: Stop | null = null;
+        for (const ex of s.stops) {
+          if (fastDistM(ex.pt, pt, cosLat) < 35) {
+            stop = ex;
+            break;
+          }
+        }
+        let isNew = false;
+        if (!stop) {
+          if (s.cash < STOP_COST) {
+            get().notify(
+              `Building a stop costs $${(STOP_COST / 1000).toFixed(0)}k — not enough cash.`,
+              'bad',
+            );
+            return;
+          }
+          const node = s.graph.insertStopNode(pt, 240);
+          if (node === null) {
+            get().notify('Too far from a road — click closer to a street.', 'bad');
+            return;
+          }
+          stop = s.stops.find((x) => x.node === node) ?? null;
+          if (!stop) {
+            const streetName = s.graph.stopNameAt(node);
+            stop = {
+              id: `s${stopSeq++}`,
+              name: streetName ?? `Stop ${stopSeq}`,
+              node,
+              pt: s.graph.pack.nodes[node],
+              tier: 1,
+              invested: STOP_COST,
+            };
+            isNew = true;
+          }
+        }
+        if (line.stopIds.includes(stop.id)) {
+          get().notify(`${stop.name} is already on ${line.name}.`, 'bad');
+          return;
+        }
+        const idx = bestInsertIndex(line, stop.pt, cosLat);
+        const stopIds = [...line.stopIds];
+        stopIds.splice(idx, 0, stop.id);
+        const allStops = isNew ? [...s.stops, stop] : s.stops;
+        const sm = new Map(allStops.map((x) => [x.id, x]));
+        const geo = computeLinePath(s.graph, sm, stopIds, cosLat);
+        if (!geo) {
+          get().notify('No street path found through that stop.', 'bad');
+          return;
+        }
+        set({
+          cash: isNew ? s.cash - STOP_COST : s.cash,
+          stops: allStops,
+          lines: s.lines.map((l) => (l.id === line.id ? { ...l, stopIds, ...geo } : l)),
+        });
+        touchNetwork();
+        get().notify(
+          `${stop.name} added to ${line.name}` +
+            (isNew ? ` ($${(STOP_COST / 1000).toFixed(0)}k).` : '.'),
+          'good',
+        );
+        get().saveGame();
         return;
       }
 
@@ -765,6 +946,57 @@ export const useGame = create<GameState>((set, get) => {
       touchNetwork();
       get().notify(`${st.name} upgraded to ${STOP_TIER_NAMES[next]}.`, 'good');
       get().saveGame();
+    },
+
+    removeStopFromLine: (lineId, stopId) => {
+      const s = get();
+      const line = s.lines.find((l) => l.id === lineId);
+      if (!line || !s.graph || !s.pack) return;
+      if (line.stopIds.length <= 2) {
+        get().notify('A line needs at least 2 stops.', 'bad');
+        return;
+      }
+      if (!line.stopIds.includes(stopId)) return;
+      const cosLat = Math.cos((s.pack.meta.center[1] * Math.PI) / 180);
+      const stopIds = line.stopIds.filter((id) => id !== stopId);
+      const sm = new Map(s.stops.map((x) => [x.id, x]));
+      const geo = computeLinePath(s.graph, sm, stopIds, cosLat);
+      if (!geo) {
+        get().notify('No street path found without that stop.', 'bad');
+        return;
+      }
+      const lines = s.lines.map((l) => (l.id === lineId ? { ...l, stopIds, ...geo } : l));
+      const used = new Set(lines.flatMap((l) => l.stopIds));
+      const st = s.stops.find((x) => x.id === stopId);
+      let stops = s.stops;
+      let cash = s.cash;
+      if (st && !used.has(stopId)) {
+        const refund = Math.round((st.invested ?? STOP_COST) / 2);
+        cash += refund;
+        stops = s.stops.filter((x) => x.id !== stopId);
+        get().notify(
+          `${st.name} demolished — $${(refund / 1000).toFixed(0)}k salvaged.`,
+          'info',
+        );
+      } else if (st) {
+        get().notify(`${st.name} removed from ${line.name}.`, 'info');
+      }
+      set({
+        lines,
+        stops,
+        cash,
+        moveStopId: s.moveStopId === stopId ? null : s.moveStopId,
+      });
+      touchNetwork();
+      get().saveGame();
+    },
+
+    requestMoveStop: (stopId) => {
+      const s = get();
+      set({
+        moveStopId: stopId,
+        tool: stopId ? 'route-edit' : s.tool,
+      });
     },
 
     buyDepotAddon: (addon) => {

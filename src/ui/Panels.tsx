@@ -293,7 +293,7 @@ function LineEditPanel() {
         />
       </div>
 
-      <StopList stopIds={line.stopIds} />
+      <StopList lineId={line.id} stopIds={line.stopIds} />
 
       {st && (
         <div className="stat-grid">
@@ -345,25 +345,37 @@ function LineEditPanel() {
   );
 }
 
-/** the line's stops with per-stop upgrade buttons (sign -> shelter -> station) */
-function StopList({ stopIds }: { stopIds: string[] }) {
+/**
+ * The route editor: every stop by street name, in order, with upgrade,
+ * move and remove controls. Editing mode adds stops from map clicks.
+ */
+function StopList({ lineId, stopIds }: { lineId: string; stopIds: string[] }) {
   const stops = useGame((s) => s.stops);
   const cash = useGame((s) => s.cash);
+  const tool = useGame((s) => s.tool);
+  const moveStopId = useGame((s) => s.moveStopId);
   const upgradeStop = useGame((s) => s.upgradeStop);
+  const removeStopFromLine = useGame((s) => s.removeStopFromLine);
+  const requestMoveStop = useGame((s) => s.requestMoveStop);
+  const setTool = useGame((s) => s.setTool);
+  const editing = tool === 'route-edit';
+
   return (
     <div className="field">
       <label>
-        Stops <small className="dim">(upgrades pull riders from further out)</small>
+        Route <small className="dim">(upgrades pull riders from further out)</small>
       </label>
       <div className="stop-list">
-        {stopIds.map((sid) => {
+        {stopIds.map((sid, i) => {
           const st = stops.find((x) => x.id === sid);
           if (!st) return null;
           const tier = st.tier ?? 1;
           const next = tier + 1;
           const cost = STOP_UPGRADE_COST[next];
+          const movingThis = moveStopId === sid;
           return (
-            <div key={sid} className="stop-row">
+            <div key={sid} className={`stop-row ${movingThis ? 'moving' : ''}`}>
+              <span className="stop-row-idx">{i + 1}</span>
               <span className="stop-row-name" title={st.name}>{st.name}</span>
               <span className="dim">{STOP_TIER_NAMES[tier]}</span>
               {cost ? (
@@ -382,10 +394,40 @@ function StopList({ stopIds }: { stopIds: string[] }) {
               ) : (
                 <span className="dim">Max</span>
               )}
+              <button
+                className={`btn tiny ${movingThis ? 'primary' : ''}`}
+                title={
+                  movingThis
+                    ? 'Now click the map where this stop should go'
+                    : 'Move this stop: click the map to place it'
+                }
+                onClick={() => requestMoveStop(movingThis ? null : sid)}
+              >
+                {movingThis ? 'Click map…' : 'Move'}
+              </button>
+              <button
+                className="btn tiny danger"
+                disabled={stopIds.length <= 2}
+                title={
+                  stopIds.length <= 2
+                    ? 'A line needs at least 2 stops'
+                    : 'Remove this stop from the line'
+                }
+                onClick={() => removeStopFromLine(lineId, sid)}
+              >
+                ✕
+              </button>
             </div>
           );
         })}
       </div>
+      <button
+        className={`btn with-icon ${editing ? 'primary' : ''}`}
+        onClick={() => setTool(editing ? 'select' : 'route-edit')}
+      >
+        <IconPlus size={14} />
+        {editing ? 'Done editing route' : 'Edit route — click map to add stops'}
+      </button>
     </div>
   );
 }

@@ -173,6 +173,7 @@ export type Tool =
   | 'select'
   | 'line-new'
   | 'line-extend'
+  | 'route-edit'
   | 'depot-place';
 
 export interface SaveGame {
