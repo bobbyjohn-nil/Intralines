@@ -15,6 +15,16 @@ export interface LogEntry {
 
 export const CHANGELOG: LogEntry[] = [
   {
+    version: '1.1',
+    date: 'Aug 4, 2026',
+    title: 'Rules of the road',
+    items: [
+      "Bus stops can't be placed on motorways or trunk highways anymore — the game tells you to pick a regular street (applies to new lines, route edits and stop moves).",
+      'Buses keep to the right-hand side of the road in their direction of travel, so opposing buses pass each other instead of driving down the centerline.',
+      'Chunkier, more detailed roads — widths up roughly 40% at street-level zooms with center-line markings on more road tiers, landing between the old look and City Bus Manager. Cities also open a step more zoomed-in, and buses are a touch larger.',
+    ],
+  },
+  {
     version: '1.0',
     date: 'Aug 4, 2026',
     title: 'Route surgery',

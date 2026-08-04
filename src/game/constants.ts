@@ -32,6 +32,8 @@ export const STOP_TIER_NAMES: Record<number, string> = {
 };
 /** perceived minutes shaved off the walk to a stop, by tier */
 export const STOP_TIER_WALK_BONUS: Record<number, number> = { 1: 0, 2: 0.8, 3: 1.8 };
+/** fastest road a bus stop may sit on — no stops on motorways/trunks */
+export const STOP_MAX_KMH = 55;
 
 /** the city pays you per boarding on top of the fare (transit contracts!) */
 export const SUBSIDY_PER_RIDER = 1.6;

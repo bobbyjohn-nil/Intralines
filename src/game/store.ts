@@ -7,8 +7,8 @@ import {
   BUSES_PER_MECHANIC, CHARGERS_COST, HEADWAY_CHOICES, LINE_COLORS, LOAN_AMOUNT,
   LOAN_FEE, LOAN_PAYOFF, LOAN_WEEKLY_INTEREST, MECHANIC_WAGE_PER_DAY,
   OFFICE_OVERHEAD_PER_DAY, SAVE_KEY_PREFIX,
-  SAVE_VERSION, SPEEDS, START_CASH, STOP_COST, STOP_TIER_NAMES, STOP_UPGRADE_COST,
-  SUBSIDY_PER_RIDER, WASH_BAY_COST, WORKSHOP_COST,
+  SAVE_VERSION, SPEEDS, START_CASH, STOP_COST, STOP_MAX_KMH, STOP_TIER_NAMES,
+  STOP_UPGRADE_COST, SUBSIDY_PER_RIDER, WASH_BAY_COST, WORKSHOP_COST,
 } from './constants';
 import { RoadGraph, cumulativeDist } from './routing';
 import { fastDistM } from './geo';
@@ -327,7 +327,7 @@ export const useGame = create<GameState>((set, get) => {
             // node indexes don't survive across sessions (stops may split
             // streets); re-anchor each saved stop into the fresh graph
             for (const st of sv.stops) {
-              const node = graph.insertStopNode(st.pt, 240);
+              const node = graph.insertStopNode(st.pt, 240, STOP_MAX_KMH);
               if (node !== null) {
                 st.node = node;
                 st.pt = graph.pack.nodes[node];
@@ -535,9 +535,15 @@ export const useGame = create<GameState>((set, get) => {
             set({ moveStopId: null });
             return;
           }
-          const node = s.graph.insertStopNode(pt, 240);
+          const node = s.graph.insertStopNode(pt, 240, STOP_MAX_KMH);
           if (node === null) {
-            get().notify('Too far from a road — click closer to a street.', 'bad');
+            const kmh = s.graph.speedNear(pt, 240);
+            get().notify(
+              kmh !== null && kmh > STOP_MAX_KMH
+                ? "Buses can't stop on a highway — pick a regular street."
+                : 'Too far from a road — click closer to a street.',
+              'bad',
+            );
             return;
           }
           if (s.stops.some((x) => x.id !== stop.id && x.node === node)) {
@@ -597,9 +603,15 @@ export const useGame = create<GameState>((set, get) => {
             );
             return;
           }
-          const node = s.graph.insertStopNode(pt, 240);
+          const node = s.graph.insertStopNode(pt, 240, STOP_MAX_KMH);
           if (node === null) {
-            get().notify('Too far from a road — click closer to a street.', 'bad');
+            const kmh = s.graph.speedNear(pt, 240);
+            get().notify(
+              kmh !== null && kmh > STOP_MAX_KMH
+                ? "Buses can't stop on a highway — pick a regular street."
+                : 'Too far from a road — click closer to a street.',
+              'bad',
+            );
             return;
           }
           stop = s.stops.find((x) => x.node === node) ?? null;
@@ -658,9 +670,15 @@ export const useGame = create<GameState>((set, get) => {
         if (!stop) {
           // project the click onto the street itself — stops land exactly
           // where you put them, mid-block included
-          const node = s.graph.insertStopNode(pt, 240);
+          const node = s.graph.insertStopNode(pt, 240, STOP_MAX_KMH);
           if (node === null) {
-            get().notify('Too far from a road — click closer to a street.', 'bad');
+            const kmh = s.graph.speedNear(pt, 240);
+            get().notify(
+              kmh !== null && kmh > STOP_MAX_KMH
+                ? "Buses can't stop on a highway — pick a regular street."
+                : 'Too far from a road — click closer to a street.',
+              'bad',
+            );
             return;
           }
           for (const ex of [...s.stops, ...s.draft.stops]) {

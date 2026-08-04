@@ -529,7 +529,7 @@ export class BusLayer3D implements CustomLayerInterface {
     this.setDaylight(day);
     const zoom = this.map.getZoom();
     const mPerPx = (156543.03392 * this.cosLat) / Math.pow(2, zoom);
-    const busScale = Math.min(Math.max((22 * mPerPx) / 11, 1.15), 26);
+    const busScale = Math.min(Math.max((25 * mPerPx) / 11, 1.15), 29);
 
     const servedNow = new Set<string>();
     this.lastFrame = [];
@@ -594,7 +594,11 @@ export class BusLayer3D implements CustomLayerInterface {
 
         if (hit) {
           const { x, z } = this.toLocal(hit.pt);
-          mesh.position.set(x, 0, z);
+          // rules of the road: keep to the right-hand side of the centerline
+          // in the direction of travel, so opposing buses pass each other
+          const rb = ((hit.bearing + 90) * Math.PI) / 180;
+          const RIGHT_M = 3.1;
+          mesh.position.set(x + Math.sin(rb) * RIGHT_M, 0, z - Math.cos(rb) * RIGHT_M);
           mesh.rotation.y = Math.PI / 2 - (hit.bearing * Math.PI) / 180;
           mesh.scale.setScalar(busScale);
           applyBusLighting(mesh, day);

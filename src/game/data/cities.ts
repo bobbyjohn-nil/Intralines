@@ -11,7 +11,7 @@ export const CITIES: CityMeta[] = [
     region: 'Demo city — instant play, no downloads',
     kind: 'demo',
     center: [-100.0, 41.5],
-    zoom: 12.4,
+    zoom: 12.9,
     bbox: [-100.09, 41.435, -99.91, 41.565],
     calib: { workforceRate: 0.47, gravityBetaKm: 3.2, carSpeedKmh: 34 },
     dataSource: 'Procedurally generated demonstration data',
@@ -22,7 +22,7 @@ export const CITIES: CityMeta[] = [
     region: 'Massachusetts · pop ≈ 206k',
     kind: 'real',
     center: [-71.8023, 42.2626],
-    zoom: 12.6,
+    zoom: 13.1,
     bbox: [-71.95, 42.16, -71.65, 42.4],
     counties: [{ state: '25', county: '027' }],
     lodesState: 'ma',
@@ -34,7 +34,7 @@ export const CITIES: CityMeta[] = [
     region: 'Iowa · pop ≈ 214k',
     kind: 'real',
     center: [-93.6091, 41.5868],
-    zoom: 12.4,
+    zoom: 12.9,
     bbox: [-93.9, 41.455, -93.42, 41.725],
     counties: [
       { state: '19', county: '153' }, // Polk
@@ -50,7 +50,7 @@ export const CITIES: CityMeta[] = [
     region: 'Wisconsin · pop ≈ 272k',
     kind: 'real',
     center: [-89.4012, 43.0731],
-    zoom: 12.4,
+    zoom: 12.9,
     bbox: [-89.645, 42.9075, -89.135, 43.2225],
     counties: [{ state: '55', county: '025' }], // Dane
     lodesState: 'wi',

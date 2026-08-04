@@ -97,9 +97,10 @@ export class RoadGraph {
    * Precise stop placement: project the click onto the nearest street and
    * split that street there, creating a routable node exactly at the curb —
    * mid-block stops included. Falls back to an existing node when the
-   * projection lands on one.
+   * projection lands on one. maxKmh filters out roads too fast to stop on
+   * (no bus stops on the interstate).
    */
-  insertStopNode(pt: LngLat, maxM = 220): number | null {
+  insertStopNode(pt: LngLat, maxM = 220, maxKmh = Infinity): number | null {
     const candidates = new Set<number>();
     for (const hit of this.edgeGrid.within(pt, maxM)) candidates.add(hit.item);
     if (!candidates.size) return null;
@@ -107,6 +108,7 @@ export class RoadGraph {
     let best: { edge: number; distM: number; proj: LngLat; alongM: number } | null = null;
     for (const ei of candidates) {
       const e = this.pack.edges[ei];
+      if ((e.kmh || 30) > maxKmh) continue;
       const chain: LngLat[] = [this.pack.nodes[e.a], ...e.pts, this.pack.nodes[e.b]];
       let along = 0;
       for (let s = 0; s < chain.length - 1; s++) {

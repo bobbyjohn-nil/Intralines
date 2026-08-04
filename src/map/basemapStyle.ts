@@ -129,7 +129,7 @@ export function buildRealStyle(): StyleSpecification {
         layout: { 'line-cap': 'round', 'line-join': 'round' },
         paint: {
           'line-color': PALETTE.streetCasing,
-          'line-width': ['interpolate', ['exponential', 1.5], ['zoom'], 12, 1.3, 18, 15],
+          'line-width': ['interpolate', ['exponential', 1.5], ['zoom'], 12, 1.7, 15, 6.5, 18, 20],
         },
       },
       {
@@ -145,7 +145,7 @@ export function buildRealStyle(): StyleSpecification {
         layout: { 'line-cap': 'round', 'line-join': 'round' },
         paint: {
           'line-color': PALETTE.street,
-          'line-width': ['interpolate', ['exponential', 1.5], ['zoom'], 12, 0.8, 18, 11.5],
+          'line-width': ['interpolate', ['exponential', 1.5], ['zoom'], 12, 1.1, 15, 5, 18, 16],
         },
       },
       {
@@ -158,7 +158,7 @@ export function buildRealStyle(): StyleSpecification {
         layout: { 'line-cap': 'round', 'line-join': 'round' },
         paint: {
           'line-color': PALETTE.tertiaryCasing,
-          'line-width': ['interpolate', ['exponential', 1.5], ['zoom'], 11, 1.3, 18, 17],
+          'line-width': ['interpolate', ['exponential', 1.5], ['zoom'], 11, 1.7, 15, 8, 18, 23],
         },
       },
       {
@@ -171,7 +171,7 @@ export function buildRealStyle(): StyleSpecification {
         layout: { 'line-cap': 'round', 'line-join': 'round' },
         paint: {
           'line-color': PALETTE.tertiary,
-          'line-width': ['interpolate', ['exponential', 1.5], ['zoom'], 11, 0.8, 18, 13],
+          'line-width': ['interpolate', ['exponential', 1.5], ['zoom'], 11, 1.1, 15, 6, 18, 18],
         },
       },
       {
@@ -183,7 +183,7 @@ export function buildRealStyle(): StyleSpecification {
         layout: { 'line-cap': 'round', 'line-join': 'round' },
         paint: {
           'line-color': PALETTE.streetCasing,
-          'line-width': ['interpolate', ['exponential', 1.5], ['zoom'], 10, 1.5, 18, 18],
+          'line-width': ['interpolate', ['exponential', 1.5], ['zoom'], 10, 2, 15, 9, 18, 25],
         },
       },
       {
@@ -195,7 +195,7 @@ export function buildRealStyle(): StyleSpecification {
         layout: { 'line-cap': 'round', 'line-join': 'round' },
         paint: {
           'line-color': '#fff8ea',
-          'line-width': ['interpolate', ['exponential', 1.5], ['zoom'], 10, 1, 18, 14],
+          'line-width': ['interpolate', ['exponential', 1.5], ['zoom'], 10, 1.4, 15, 7, 18, 19.5],
         },
       },
       {
@@ -207,7 +207,7 @@ export function buildRealStyle(): StyleSpecification {
         layout: { 'line-cap': 'round', 'line-join': 'round' },
         paint: {
           'line-color': PALETTE.primaryCasing,
-          'line-width': ['interpolate', ['exponential', 1.5], ['zoom'], 8, 1.5, 18, 22],
+          'line-width': ['interpolate', ['exponential', 1.5], ['zoom'], 8, 2, 15, 11, 18, 30],
         },
       },
       {
@@ -219,7 +219,7 @@ export function buildRealStyle(): StyleSpecification {
         layout: { 'line-cap': 'round', 'line-join': 'round' },
         paint: {
           'line-color': PALETTE.primary,
-          'line-width': ['interpolate', ['exponential', 1.5], ['zoom'], 8, 1, 18, 17],
+          'line-width': ['interpolate', ['exponential', 1.5], ['zoom'], 8, 1.4, 15, 8.5, 18, 24],
         },
       },
       {
@@ -231,7 +231,7 @@ export function buildRealStyle(): StyleSpecification {
         layout: { 'line-cap': 'round', 'line-join': 'round' },
         paint: {
           'line-color': PALETTE.motorwayCasing,
-          'line-width': ['interpolate', ['exponential', 1.5], ['zoom'], 7, 1.8, 18, 26],
+          'line-width': ['interpolate', ['exponential', 1.5], ['zoom'], 7, 2.4, 15, 13, 18, 36],
         },
       },
       {
@@ -243,7 +243,7 @@ export function buildRealStyle(): StyleSpecification {
         layout: { 'line-cap': 'round', 'line-join': 'round' },
         paint: {
           'line-color': PALETTE.motorway,
-          'line-width': ['interpolate', ['exponential', 1.5], ['zoom'], 7, 1.2, 18, 20],
+          'line-width': ['interpolate', ['exponential', 1.5], ['zoom'], 7, 1.7, 15, 10, 18, 29],
         },
       },
       {
@@ -444,17 +444,24 @@ export function buildPackStyle(pack: CityPack): StyleSpecification {
             'interpolate', ['exponential', 1.5], ['zoom'],
             11, [
               'case',
-              ['>=', ['get', 'kmh'], 70], 2.6,
-              ['>=', ['get', 'kmh'], 42], 2,
-              ['>=', ['get', 'kmh'], 38], 1.5,
-              1.1,
+              ['>=', ['get', 'kmh'], 70], 3.4,
+              ['>=', ['get', 'kmh'], 42], 2.6,
+              ['>=', ['get', 'kmh'], 38], 2,
+              1.4,
+            ],
+            14, [
+              'case',
+              ['>=', ['get', 'kmh'], 70], 11,
+              ['>=', ['get', 'kmh'], 42], 8.5,
+              ['>=', ['get', 'kmh'], 38], 6.5,
+              5,
             ],
             18, [
               'case',
-              ['>=', ['get', 'kmh'], 70], 30,
-              ['>=', ['get', 'kmh'], 42], 25,
-              ['>=', ['get', 'kmh'], 38], 20,
-              16.5,
+              ['>=', ['get', 'kmh'], 70], 42,
+              ['>=', ['get', 'kmh'], 42], 34,
+              ['>=', ['get', 'kmh'], 38], 27,
+              22,
             ],
           ],
         },
@@ -476,17 +483,24 @@ export function buildPackStyle(pack: CityPack): StyleSpecification {
             'interpolate', ['exponential', 1.5], ['zoom'],
             11, [
               'case',
-              ['>=', ['get', 'kmh'], 70], 1.9,
-              ['>=', ['get', 'kmh'], 42], 1.4,
-              ['>=', ['get', 'kmh'], 38], 1,
-              0.7,
+              ['>=', ['get', 'kmh'], 70], 2.5,
+              ['>=', ['get', 'kmh'], 42], 1.9,
+              ['>=', ['get', 'kmh'], 38], 1.4,
+              1,
+            ],
+            14, [
+              'case',
+              ['>=', ['get', 'kmh'], 70], 8.5,
+              ['>=', ['get', 'kmh'], 42], 6.5,
+              ['>=', ['get', 'kmh'], 38], 5,
+              3.8,
             ],
             18, [
               'case',
-              ['>=', ['get', 'kmh'], 70], 24,
-              ['>=', ['get', 'kmh'], 42], 19.5,
-              ['>=', ['get', 'kmh'], 38], 15.5,
-              12.5,
+              ['>=', ['get', 'kmh'], 70], 34,
+              ['>=', ['get', 'kmh'], 42], 27,
+              ['>=', ['get', 'kmh'], 38], 21,
+              17,
             ],
           ],
         },
@@ -495,12 +509,12 @@ export function buildPackStyle(pack: CityPack): StyleSpecification {
         id: 'road-centerline',
         type: 'line',
         source: 'demo-roads',
-        minzoom: 14,
-        filter: ['>=', ['get', 'kmh'], 42],
+        minzoom: 13.2,
+        filter: ['>=', ['get', 'kmh'], 38],
         layout: { 'line-cap': 'butt', 'line-join': 'round' },
         paint: {
           'line-color': '#e9c46a',
-          'line-width': ['interpolate', ['exponential', 1.5], ['zoom'], 14, 0.5, 18, 2],
+          'line-width': ['interpolate', ['exponential', 1.5], ['zoom'], 13.2, 0.5, 18, 2.4],
           'line-dasharray': [4, 3],
           'line-opacity': 0.85,
         },
