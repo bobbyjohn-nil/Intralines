@@ -24,7 +24,8 @@ export interface DraftLine {
 }
 
 export type Panel =
-  | 'none' | 'lines' | 'line-edit' | 'fleet' | 'staff' | 'depot' | 'finance' | 'help';
+  | 'none' | 'lines' | 'line-edit' | 'fleet' | 'staff' | 'depot' | 'finance' | 'help'
+  | 'map-options';
 
 export interface Notice {
   id: number;
@@ -69,6 +70,8 @@ export interface GameState {
   mapEpoch: number; // bumped when overlays must refresh
   /** 'auto' = online basemap tiles when reachable; 'offline' = never phone home */
   basemapPref: 'auto' | 'offline';
+  /** station name labels: only when zoomed right in, or always */
+  stopLabels: 'zoom' | 'always';
   /** what the map actually used this session (for the toggle button icon) */
   basemapActive: 'online' | 'offline';
   /** city-load failure shown on the menu (survives the menu remounting) */
@@ -86,6 +89,7 @@ export interface GameState {
   setHeatmap: (h: 'off' | 'pop' | 'jobs') => void;
   toggleBasemap: () => void;
   setBasemapActive: (m: 'online' | 'offline') => void;
+  setStopLabels: (mode: 'zoom' | 'always') => void;
   setMenuError: (e: string | null) => void;
   mapClick: (pt: LngLat) => void;
   undoDraftStop: () => void;
@@ -250,6 +254,10 @@ export const useGame = create<GameState>((set, get) => {
       (typeof localStorage !== 'undefined' &&
         (localStorage.getItem('intralines-basemap') as 'auto' | 'offline')) ||
       'auto',
+    stopLabels:
+      (typeof localStorage !== 'undefined' &&
+        (localStorage.getItem('intralines-stop-labels') as 'zoom' | 'always')) ||
+      'zoom',
     basemapActive: 'offline',
     menuError: null,
 
@@ -435,6 +443,15 @@ export const useGame = create<GameState>((set, get) => {
     },
 
     setBasemapActive: (m) => set({ basemapActive: m }),
+
+    setStopLabels: (mode) => {
+      try {
+        localStorage.setItem('intralines-stop-labels', mode);
+      } catch {
+        // fine
+      }
+      set({ stopLabels: mode });
+    },
 
     setMenuError: (e) => set({ menuError: e }),
 

@@ -8,6 +8,17 @@ export interface LogEntry {
 
 export const CHANGELOG: LogEntry[] = [
   {
+    version: '0.7',
+    date: 'Aug 4, 2026',
+    title: 'Names on the map',
+    items: [
+      'Station name labels on the map: zoom right in to see them, or flip them on everywhere from the new Map options menu in the dock.',
+      'Map options menu collects the basemap Auto / Offline switch too.',
+      'Home screen reworked into drill-in pages with big menu strips (Play, Saves, Settings, Changelog).',
+      'Fixed spare buses doing a pointless depot round-trip after the service window closed.',
+    ],
+  },
+  {
     version: '0.6',
     date: 'Aug 4, 2026',
     title: 'Vultures & deadheads',

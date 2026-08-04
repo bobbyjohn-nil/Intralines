@@ -1,7 +1,7 @@
 import { useGame } from '../game/store';
 import type { Panel } from '../game/store';
 import {
-  IconBus, IconChart, IconDepot, IconGlobe, IconHelp, IconMapFold,
+  IconBus, IconChart, IconDepot, IconHelp, IconMapFold,
   IconPeople, IconPlus, IconPointer, IconRoute,
 } from './icons';
 
@@ -15,9 +15,6 @@ export function Toolbar() {
   const setHeatmap = useGame((s) => s.setHeatmap);
   const depot = useGame((s) => s.depot);
   const pack = useGame((s) => s.pack);
-  const basemapPref = useGame((s) => s.basemapPref);
-  const basemapActive = useGame((s) => s.basemapActive);
-  const toggleBasemap = useGame((s) => s.toggleBasemap);
 
   const togglePanel = (p: Panel) => setPanel(panel === p ? 'none' : p);
 
@@ -67,19 +64,14 @@ export function Toolbar() {
           <span>Jobs</span>
         </button>
       </div>
-      {pack?.meta.kind === 'real' && (
-        <button
-          onClick={toggleBasemap}
-          title={
-            basemapPref === 'offline'
-              ? 'Built-in offline map (no internet used) — click for online tiles'
-              : `Auto basemap, currently ${basemapActive} — click to force offline`
-          }
-        >
-          {basemapPref === 'offline' ? <IconMapFold /> : <IconGlobe />}
-          <span>Map · {basemapPref === 'offline' ? 'Offline' : 'Auto'}</span>
-        </button>
-      )}
+      <button
+        className={panel === 'map-options' ? 'on' : ''}
+        onClick={() => togglePanel('map-options')}
+        title="Map options: station names, basemap"
+      >
+        <IconMapFold />
+        <span>Map</span>
+      </button>
       <div className="dock-sep" />
       <button
         className={panel === 'lines' || panel === 'line-edit' ? 'on' : ''}

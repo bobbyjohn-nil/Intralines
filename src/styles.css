@@ -681,6 +681,21 @@ button.chip:hover {
   line-height: 1.2;
 }
 
+/* ---------- station name labels ---------- */
+
+.stop-label {
+  background: rgba(255, 253, 246, 0.92);
+  border: 1px solid rgba(60, 55, 40, 0.25);
+  border-radius: 7px;
+  padding: 1px 7px;
+  font-size: 10.5px;
+  font-weight: 650;
+  color: #3c3728;
+  white-space: nowrap;
+  box-shadow: 0 1px 4px rgba(30, 25, 12, 0.25);
+  pointer-events: none;
+}
+
 /* ---------- live stop counts ---------- */
 
 .stop-count {

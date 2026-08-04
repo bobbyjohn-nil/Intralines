@@ -515,6 +515,13 @@ export class BusLayer3D implements CustomLayerInterface {
         let seenPt: LngLat | null = null;
         let hit: { pt: LngLat; bearing: number; lineD: number | null } | null = null;
 
+        // vehicles whose first departure falls outside the service window
+        // never leave the depot — no ghost out-and-back
+        if (firstDep > svcEnd) {
+          mesh.visible = false;
+          this.lastFrame.push({ line: line.id, k, pt: null, visible: false });
+          continue;
+        }
         if (dp && dayMin >= firstDep - deadDur && dayMin < firstDep) {
           // pull-out: rolls from the depot to the first stop before service
           const tSec = ((dayMin - (firstDep - deadDur)) / cong) * 60;

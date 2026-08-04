@@ -34,6 +34,7 @@ export function MapView({ pack }: { pack: CityPack }) {
   const readyRef = useRef(false);
   const depotMarkerRef = useRef<maplibregl.Marker | null>(null);
   const chipsRef = useRef<Map<string, maplibregl.Marker>>(new Map());
+  const labelsRef = useRef<Map<string, maplibregl.Marker>>(new Map());
 
   const stops = useGame((s) => s.stops);
   const lines = useGame((s) => s.lines);
@@ -204,6 +205,35 @@ export function MapView({ pack }: { pack: CityPack }) {
             chips.delete(id);
           }
         }
+
+        // station name labels: zoomed right in, or forced on via Map options
+        const st = useGame.getState();
+        const labelsOn =
+          st.stopLabels === 'always' ? zoomNow >= 11.5 : zoomNow >= 15.5;
+        const labels = labelsRef.current;
+        const wanted = new Set<string>();
+        if (labelsOn) {
+          for (const stop of st.stops) {
+            wanted.add(stop.id);
+            let m = labels.get(stop.id);
+            if (!m) {
+              const el = document.createElement('div');
+              el.className = 'stop-label';
+              m = new maplibregl.Marker({ element: el, anchor: 'top', offset: [0, 8] })
+                .setLngLat(stop.pt)
+                .addTo(map!);
+              labels.set(stop.id, m);
+            }
+            const el = m.getElement();
+            if (el.textContent !== stop.name) el.textContent = stop.name;
+          }
+        }
+        for (const [id, m] of labels) {
+          if (!wanted.has(id)) {
+            m.remove();
+            labels.delete(id);
+          }
+        }
       }, 600);
 
       // day/night tinting for the basemap
@@ -284,6 +314,8 @@ export function MapView({ pack }: { pack: CityPack }) {
       if (stopChips) clearInterval(stopChips);
       chipsRef.current.forEach((m) => m.remove());
       chipsRef.current.clear();
+      labelsRef.current.forEach((m) => m.remove());
+      labelsRef.current.clear();
       readyRef.current = false;
       depotMarkerRef.current?.remove();
       depotMarkerRef.current = null;

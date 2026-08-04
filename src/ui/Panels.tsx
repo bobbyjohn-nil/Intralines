@@ -27,7 +27,69 @@ export function PanelHost() {
       {panel === 'depot' && <DepotPanel />}
       {panel === 'finance' && <FinancePanel />}
       {panel === 'help' && <HelpPanel />}
+      {panel === 'map-options' && <MapOptionsPanel />}
     </div>
+  );
+}
+
+function MapOptionsPanel() {
+  const stopLabels = useGame((s) => s.stopLabels);
+  const setStopLabels = useGame((s) => s.setStopLabels);
+  const basemapPref = useGame((s) => s.basemapPref);
+  const basemapActive = useGame((s) => s.basemapActive);
+  const toggleBasemap = useGame((s) => s.toggleBasemap);
+  const pack = useGame((s) => s.pack);
+
+  return (
+    <>
+      <PanelTitle title="Map options" />
+      <div className="field">
+        <label>
+          Station names{' '}
+          <small className="dim">(stops are named after their streets)</small>
+        </label>
+        <div className="seg">
+          <button
+            className={stopLabels === 'zoom' ? 'on' : ''}
+            onClick={() => setStopLabels('zoom')}
+            title="Show names only when zoomed right in"
+          >
+            Zoomed in
+          </button>
+          <button
+            className={stopLabels === 'always' ? 'on' : ''}
+            onClick={() => setStopLabels('always')}
+            title="Show names whenever stops are visible"
+          >
+            Always
+          </button>
+        </div>
+      </div>
+      {pack?.meta.kind === 'real' && (
+        <div className="field">
+          <label>
+            Basemap{' '}
+            <small className="dim">(currently {basemapActive})</small>
+          </label>
+          <div className="seg">
+            <button
+              className={basemapPref === 'auto' ? 'on' : ''}
+              onClick={() => basemapPref !== 'auto' && toggleBasemap()}
+              title="Online map tiles when reachable"
+            >
+              Auto
+            </button>
+            <button
+              className={basemapPref === 'offline' ? 'on' : ''}
+              onClick={() => basemapPref !== 'offline' && toggleBasemap()}
+              title="Built-in offline map — never phones home"
+            >
+              Offline
+            </button>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 
