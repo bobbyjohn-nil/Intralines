@@ -15,6 +15,15 @@ export interface LogEntry {
 
 export const CHANGELOG: LogEntry[] = [
   {
+    version: '1.3',
+    date: 'Aug 4, 2026',
+    title: 'Who rides, who drives',
+    items: [
+      'New "Travel modes" demand view: every neighborhood dot is colored by how its commuters actually get around — slate for driving, green for the bus, blue for walking, amber for biking — straight from the mode-choice model. Build better service and watch neighborhoods turn green.',
+      'Click any demand dot to inspect it: residents, jobs (with education and tourism slices), density, and a full travel-mode breakdown with percentage bars.',
+    ],
+  },
+  {
     version: '1.2',
     date: 'Aug 4, 2026',
     title: 'Demand you can count',

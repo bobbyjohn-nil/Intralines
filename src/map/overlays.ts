@@ -9,7 +9,15 @@ const EMPTY = { type: 'FeatureCollection', features: [] } as GeoJSON.FeatureColl
 
 import type { ExpressionSpecification } from 'maplibre-gl';
 
-export type HeatMode = 'pop' | 'jobs' | 'tour' | 'edu';
+export type HeatMode = 'pop' | 'jobs' | 'tour' | 'edu' | 'modes';
+
+/** dot colors for the travel-mode view (dominant mode per block group) */
+export const MODE_COLORS: Record<string, { fill: string; stroke: string; label: string }> = {
+  car: { fill: '#8a8f98', stroke: '#5c6068', label: 'Driving' },
+  bus: { fill: '#2f9e44', stroke: '#1e7030', label: 'Riding the bus' },
+  walk: { fill: '#3a9bd6', stroke: '#2270a4', label: 'Walking' },
+  bike: { fill: '#e0a13c', stroke: '#aa7318', label: 'Biking' },
+};
 
 /**
  * Demand dot colors: translucent fill, crisp solid outline — sharp-edged
@@ -17,7 +25,7 @@ export type HeatMode = 'pop' | 'jobs' | 'tour' | 'edu';
  * past the city limits reads clearly.
  * purple = residents, teal = jobs, amber = tourism, blue = education.
  */
-const HEAT_COLORS: Record<HeatMode, { fill: string; stroke: string }> = {
+const HEAT_COLORS: Record<Exclude<HeatMode, 'modes'>, { fill: string; stroke: string }> = {
   pop: { fill: '#7a54e0', stroke: '#5230b8' },
   jobs: { fill: '#0e7a92', stroke: '#075a6e' },
   tour: { fill: '#db742c', stroke: '#a8480e' },
@@ -176,11 +184,54 @@ export function updateHeatmap(
   map: MLMap,
   pack: CityPack,
   mode: 'off' | HeatMode,
+  bgModes?: { bus: number; car: number; walk: number; bike: number }[],
 ): void {
   if (mode === 'off') {
     setData(map, 'heatmap-src', EMPTY);
     return;
   }
+
+  if (mode === 'modes') {
+    // dominant travel mode per block group; dot size = commuters
+    const totals = pack.blockGroups.map((_, i) => {
+      const m = bgModes?.[i];
+      return m ? m.bus + m.car + m.walk + m.bike : 0;
+    });
+    const positive = totals.filter((t) => t > 0).sort((a, b) => a - b);
+    const norm = positive[Math.floor(positive.length * 0.92)] || 1;
+    const features = pack.blockGroups.flatMap((bg, i) => {
+      const m = bgModes?.[i];
+      const total = totals[i];
+      if (!m || total < 8) return [];
+      // color by the strongest alternative to driving where it carries real
+      // weight (>= 18% of trips); gray only where the car is unchallenged.
+      // A dominant-mode map of a US city is wall-to-wall car — this shows
+      // where your buses (and feet, and bikes) are actually winning.
+      const alt = (['bus', 'walk', 'bike'] as const).reduce((a, b) =>
+        m[a] >= m[b] ? a : b,
+      );
+      const dominant = m[alt] / total >= 0.18 ? alt : 'car';
+      return [
+        {
+          type: 'Feature' as const,
+          properties: {
+            w: Math.pow(Math.min(total / norm, 1), 0.75),
+            bg: i,
+            fill: MODE_COLORS[dominant].fill,
+            stroke: MODE_COLORS[dominant].stroke,
+          },
+          geometry: { type: 'Point' as const, coordinates: bg.centroid },
+        },
+      ];
+    });
+    if (map.getLayer('heatmap-blob')) {
+      map.setPaintProperty('heatmap-blob', 'circle-color', ['get', 'fill']);
+      map.setPaintProperty('heatmap-blob', 'circle-stroke-color', ['get', 'stroke']);
+    }
+    setData(map, 'heatmap-src', { type: 'FeatureCollection', features });
+    return;
+  }
+
   const value = (bg: CityPack['blockGroups'][number]): number =>
     mode === 'pop' ? bg.pop
     : mode === 'jobs' ? bg.jobs
@@ -201,7 +252,7 @@ export function updateHeatmap(
     return [
       {
         type: 'Feature' as const,
-        properties: { w: Math.pow(Math.min(rel, 1), 0.75) },
+        properties: { w: Math.pow(Math.min(rel, 1), 0.75), bg: i },
         geometry: { type: 'Point' as const, coordinates: bg.centroid },
       },
     ];

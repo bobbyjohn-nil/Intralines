@@ -315,37 +315,56 @@ function computeNetwork(msg: NetworkMsg) {
     return isFinite(best) ? { min: best, l1: bl1, l2: bl2 } : null;
   }
 
-  // main OD sweep
+  // main OD sweep: bus assignment for served pairs, plus a full travel-mode
+  // split (bus / car / walk / bike) per origin block group for the map view
   const boardings = new Float64Array(lineCalc.length);
+  const bgModes = Array.from({ length: n }, () => ({ bus: 0, car: 0, walk: 0, bike: 0 }));
   let totalRiders = 0;
   let weightedWait = 0;
   if (T && distKm) {
     for (let i = 0; i < n; i++) {
-      if (!near[i].length) continue;
+      const served = near[i].length > 0;
       const row = i * n;
       for (let j = 0; j < n; j++) {
         const flow = T[row + j];
         if (flow < 0.5 || i === j) continue;
-        const bt = bestTransit(i, j);
-        if (!bt || bt.min > 75) continue;
         const dKm = distKm[row + j];
-        const carMin = (dKm / calib.carSpeedKmh) * 60 * 1.3 + CAR_PARK_PENALTY_MIN;
-        const walkOnlyMin = dKm * WALK_MIN_PER_KM;
-        // when walking beats the bus, most (not all) of those trips walk
-        let walkFactor = 1;
-        if (walkOnlyMin < bt.min * 0.75) walkFactor = 0.15;
-        else if (walkOnlyMin < bt.min) walkFactor = 0.45;
-        const auto = 0.92 / (1 + Math.exp((bt.min - carMin) / MODE_TAU));
-        const share = Math.min(
-          0.9,
-          (CAPTIVE_SHARE + (1 - CAPTIVE_SHARE) * auto) * walkFactor,
-        );
-        if (share < 0.01) continue;
-        const riders = flow * share; // one-way commuters choosing the bus
-        totalRiders += riders * 2; // round trips
-        weightedWait += riders * 2 * Math.min(lineCalc[bt.l1].headwayEff / 2, MAX_WAIT_MIN);
-        boardings[bt.l1] += riders * 2;
-        if (bt.l2 >= 0) boardings[bt.l2] += riders * 2;
+        let share = 0;
+        if (served) {
+          const bt = bestTransit(i, j);
+          if (bt && bt.min <= 75) {
+            const carMin = (dKm / calib.carSpeedKmh) * 60 * 1.3 + CAR_PARK_PENALTY_MIN;
+            const walkOnlyMin = dKm * WALK_MIN_PER_KM;
+            // when walking beats the bus, most (not all) of those trips walk
+            let walkFactor = 1;
+            if (walkOnlyMin < bt.min * 0.75) walkFactor = 0.15;
+            else if (walkOnlyMin < bt.min) walkFactor = 0.45;
+            const auto = 0.92 / (1 + Math.exp((bt.min - carMin) / MODE_TAU));
+            share = Math.min(
+              0.9,
+              (CAPTIVE_SHARE + (1 - CAPTIVE_SHARE) * auto) * walkFactor,
+            );
+            if (share >= 0.01) {
+              const riders = flow * share; // one-way commuters choosing the bus
+              totalRiders += riders * 2; // round trips
+              weightedWait +=
+                riders * 2 * Math.min(lineCalc[bt.l1].headwayEff / 2, MAX_WAIT_MIN);
+              boardings[bt.l1] += riders * 2;
+              if (bt.l2 >= 0) boardings[bt.l2] += riders * 2;
+            } else {
+              share = 0;
+            }
+          }
+        }
+        // non-bus trips: short hops walk, a modest slice bikes, the rest drive
+        const nonBus = 1 - share;
+        const walk = nonBus * 0.85 * Math.exp(-dKm / 0.9);
+        const bike = (nonBus - walk) * 0.1 * Math.exp(-Math.max(dKm - 1, 0) / 5);
+        const m = bgModes[i];
+        m.bus += flow * share;
+        m.walk += flow * walk;
+        m.bike += flow * bike;
+        m.car += flow * Math.max(0, nonBus - walk - bike);
       }
     }
   }
@@ -431,5 +450,11 @@ function computeNetwork(msg: NetworkMsg) {
     totalDailyRiders: totalDaily,
     satisfaction,
     perLine,
+    bgModes: bgModes.map((m) => ({
+      bus: Math.round(m.bus),
+      car: Math.round(m.car),
+      walk: Math.round(m.walk),
+      bike: Math.round(m.bike),
+    })),
   };
 }

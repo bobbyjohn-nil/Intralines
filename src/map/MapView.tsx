@@ -5,7 +5,8 @@ import type { CityPack } from '../game/types';
 import { useGame } from '../game/store';
 import { buildPackStyle, buildRealStyle, PALETTE } from './basemapStyle';
 import {
-  ensureOverlays, updateDepot, updateDraft, updateDraftCursor, updateHeatmap, updateNetwork,
+  ensureOverlays, MODE_COLORS, updateDepot, updateDraft, updateDraftCursor, updateHeatmap,
+  updateNetwork,
 } from './overlays';
 import { BusLayer3D } from './busLayer3d';
 import type { LineExtras } from './busLayer3d';
@@ -35,6 +36,7 @@ export function MapView({ pack }: { pack: CityPack }) {
   const depotMarkerRef = useRef<maplibregl.Marker | null>(null);
   const chipsRef = useRef<Map<string, maplibregl.Marker>>(new Map());
   const labelsRef = useRef<Map<string, maplibregl.Marker>>(new Map());
+  const popupRef = useRef<maplibregl.Popup | null>(null);
 
   const stops = useGame((s) => s.stops);
   const lines = useGame((s) => s.lines);
@@ -136,12 +138,30 @@ export function MapView({ pack }: { pack: CityPack }) {
             : [];
           if (feats.length) {
             st.selectLine(feats[0].properties?.id ?? null);
-          } else if (st.selectedLineId) {
-            st.selectLine(null);
+            return;
           }
+          const dots =
+            st.heatmap !== 'off' && map.getLayer('heatmap-blob')
+              ? map.queryRenderedFeatures(e.point, { layers: ['heatmap-blob'] })
+              : [];
+          if (dots.length && dots[0].properties?.bg !== undefined) {
+            openDemandPopup(map, Number(dots[0].properties.bg));
+            return;
+          }
+          if (st.selectedLineId) st.selectLine(null);
           return;
         }
         st.mapClick(pt);
+      });
+
+      map.on('mousemove', (e: MapMouseEvent) => {
+        if (!map) return;
+        const st = useGame.getState();
+        if (st.tool !== 'select' || st.heatmap === 'off' || !map.getLayer('heatmap-blob')) {
+          return;
+        }
+        const dots = map.queryRenderedFeatures(e.point, { layers: ['heatmap-blob'] });
+        map.getCanvas().style.cursor = dots.length ? 'pointer' : '';
       });
 
       let moveScheduled = false;
@@ -316,6 +336,8 @@ export function MapView({ pack }: { pack: CityPack }) {
       chipsRef.current.clear();
       labelsRef.current.forEach((m) => m.remove());
       labelsRef.current.clear();
+      popupRef.current?.remove();
+      popupRef.current = null;
       readyRef.current = false;
       depotMarkerRef.current?.remove();
       depotMarkerRef.current = null;
@@ -399,11 +421,61 @@ export function MapView({ pack }: { pack: CityPack }) {
     return out;
   }
 
+  function openDemandPopup(map: MLMap, idx: number): void {
+    const st = useGame.getState();
+    const bg = st.pack?.blockGroups[idx];
+    if (!bg) return;
+    const fmtI = (v: number) => Math.round(v).toLocaleString();
+    const kv = (label: string, val: string) =>
+      `<div class="dp-kv"><span>${label}</span><b>${val}</b></div>`;
+    const rows =
+      kv('Residents', fmtI(bg.pop)) +
+      kv('Jobs', fmtI(bg.jobs)) +
+      ((bg.edu ?? 0) > 0 ? kv('· in education', fmtI(bg.edu ?? 0)) : '') +
+      ((bg.tour ?? 0) > 0 ? kv('· in tourism', fmtI(bg.tour ?? 0)) : '') +
+      kv('Density', `${fmtI((bg.pop + bg.jobs) / Math.max(bg.areaKm2, 0.02))} /km²`);
+    let modeHtml = '';
+    const m = st.stats?.bgModes?.[idx];
+    if (m) {
+      const total = m.bus + m.car + m.walk + m.bike;
+      if (total > 0) {
+        const bar = (key: 'car' | 'bus' | 'walk' | 'bike') => {
+          const pct = (m[key] / total) * 100;
+          return (
+            `<div class="dp-mode"><span class="dp-swatch" style="background:${MODE_COLORS[key].fill}"></span>` +
+            `<span class="dp-mlabel">${MODE_COLORS[key].label}</span>` +
+            `<span class="dp-bar"><i style="width:${pct.toFixed(0)}%;background:${MODE_COLORS[key].fill}"></i></span>` +
+            `<b>${pct.toFixed(0)}%</b></div>`
+          );
+        };
+        modeHtml =
+          `<div class="dp-modes"><small>${fmtI(total)} commuters start here each day</small>` +
+          bar('car') + bar('bus') + bar('walk') + bar('bike') +
+          '</div>';
+      }
+    }
+    const streetName = st.graph
+      ? (() => {
+          const node = st.graph.nearestNode(bg.centroid, 400);
+          return node !== null ? st.graph.stopNameAt(node) : null;
+        })()
+      : null;
+    popupRef.current?.remove();
+    popupRef.current = new maplibregl.Popup({ maxWidth: '280px', offset: 10 })
+      .setLngLat(bg.centroid)
+      .setHTML(
+        `<div class="demand-popup"><b class="dp-title">${
+          streetName ? `${streetName} area` : 'Neighborhood'
+        }</b>${rows}${modeHtml}</div>`,
+      )
+      .addTo(map);
+  }
+
   function syncAll(): void {
     const map = mapRef.current;
     if (!map || !readyRef.current) return;
     const st = useGame.getState();
-    updateHeatmap(map, pack, st.heatmap);
+    updateHeatmap(map, pack, st.heatmap, st.stats?.bgModes);
     updateNetwork(map, st.stops, st.lines, st.selectedLineId);
     updateDraft(map, st.draft);
     syncDepot();
@@ -447,8 +519,12 @@ export function MapView({ pack }: { pack: CityPack }) {
 
   useEffect(() => {
     const map = mapRef.current;
-    if (map && readyRef.current) updateHeatmap(map, pack, heatmap);
-  }, [heatmap, pack]);
+    if (map && readyRef.current) {
+      updateHeatmap(map, pack, heatmap, stats?.bgModes);
+      if (heatmap === 'off') popupRef.current?.remove();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [heatmap, pack, stats]);
 
   useEffect(() => {
     if (readyRef.current) syncDepot();

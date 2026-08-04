@@ -148,6 +148,8 @@ export interface NetworkStats {
   totalDailyRiders: number;
   satisfaction: number; // 0..100
   perLine: LineStats[];
+  /** commuters by chosen travel mode per block group (same order as pack) */
+  bgModes?: { bus: number; car: number; walk: number; bike: number }[];
 }
 
 export interface Depot {

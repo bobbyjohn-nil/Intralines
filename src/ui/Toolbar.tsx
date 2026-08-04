@@ -12,13 +12,13 @@ function HeatDropdown({
   heatmap,
   setHeatmap,
 }: {
-  heatmap: 'off' | 'pop' | 'jobs' | 'tour' | 'edu';
-  setHeatmap: (h: 'off' | 'pop' | 'jobs' | 'tour' | 'edu') => void;
+  heatmap: 'off' | 'pop' | 'jobs' | 'tour' | 'edu' | 'modes';
+  setHeatmap: (h: 'off' | 'pop' | 'jobs' | 'tour' | 'edu' | 'modes') => void;
 }) {
   const [open, setOpen] = useState(false);
   const boxRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
-  const active = heatmap === 'tour' || heatmap === 'edu';
+  const active = heatmap === 'tour' || heatmap === 'edu' || heatmap === 'modes';
 
   useEffect(() => {
     if (!open) return;
@@ -30,7 +30,7 @@ function HeatDropdown({
     return () => window.removeEventListener('mousedown', close);
   }, [open]);
 
-  const pick = (h: 'tour' | 'edu') => {
+  const pick = (h: 'tour' | 'edu' | 'modes') => {
     setHeatmap(heatmap === h ? 'off' : h);
     setOpen(false);
   };
@@ -44,7 +44,13 @@ function HeatDropdown({
       >
         <IconHeat />
         <span>
-          {heatmap === 'tour' ? 'Tourism' : heatmap === 'edu' ? 'Education' : 'More'} ▾
+          {heatmap === 'tour'
+            ? 'Tourism'
+            : heatmap === 'edu'
+              ? 'Education'
+              : heatmap === 'modes'
+                ? 'Modes'
+                : 'More'} ▾
         </span>
       </button>
       {open &&
@@ -65,6 +71,13 @@ function HeatDropdown({
             >
               Educational demand
               <small>schools and campuses</small>
+            </button>
+            <button
+              className={heatmap === 'modes' ? 'on' : ''}
+              onClick={() => pick('modes')}
+            >
+              Travel modes
+              <small>who drives, walks, bikes or rides the bus</small>
             </button>
             <p className="heat-note">
               These layers can overlap the residents and work demand — campuses,

@@ -65,7 +65,7 @@ export interface GameState {
   draft: DraftLine | null;
   selectedLineId: string | null;
   panel: Panel;
-  heatmap: 'off' | 'pop' | 'jobs' | 'tour' | 'edu';
+  heatmap: 'off' | 'pop' | 'jobs' | 'tour' | 'edu' | 'modes';
   notices: Notice[];
   mapEpoch: number; // bumped when overlays must refresh
   /** 'auto' = online basemap tiles when reachable; 'offline' = never phone home */
@@ -88,7 +88,7 @@ export interface GameState {
   togglePause: () => void;
   setTool: (t: Tool) => void;
   setPanel: (p: Panel) => void;
-  setHeatmap: (h: 'off' | 'pop' | 'jobs' | 'tour' | 'edu') => void;
+  setHeatmap: (h: 'off' | 'pop' | 'jobs' | 'tour' | 'edu' | 'modes') => void;
   toggleBasemap: () => void;
   setBasemapActive: (m: 'online' | 'offline') => void;
   setStopLabels: (mode: 'zoom' | 'always') => void;
