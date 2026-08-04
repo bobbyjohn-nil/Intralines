@@ -815,6 +815,7 @@ export const useGame = create<GameState>((set, get) => {
         fleet: s.fleet,
         totalRidersServed: s.totalRidersServed,
         loanTaken: s.loanTaken,
+        savedAt: Date.now(),
       };
       try {
         localStorage.setItem(SAVE_KEY_PREFIX + s.pack.meta.id, JSON.stringify(sv));

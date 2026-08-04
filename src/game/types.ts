@@ -184,4 +184,6 @@ export interface SaveGame {
   fleet: FleetEntry[];
   totalRidersServed: number;
   loanTaken: boolean;
+  /** wall-clock ms when the save was written (absent in old saves) */
+  savedAt?: number;
 }

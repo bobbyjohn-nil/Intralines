@@ -279,7 +279,7 @@ const pack = {
     region: 'Demo City — no download needed',
     kind: 'demo',
     center: CENTER,
-    zoom: 13.1,
+    zoom: 12.4,
     bbox: [m2lng(-extent), m2lat(-extent), m2lng(extent), m2lat(extent)],
     calib: { workforceRate: 0.47, gravityBetaKm: 3.2, carSpeedKmh: 34 },
     dataSource: 'Procedurally generated demonstration data',
