@@ -611,17 +611,14 @@ button.chip:hover {
 /* ---------- live stop counts ---------- */
 
 .stop-count {
-  min-width: 20px;
-  padding: 1px 6px;
-  border-radius: 999px;
-  background: rgba(44, 42, 36, 0.92);
-  color: #ffe9a8;
-  font-size: 11px;
-  font-weight: 700;
-  text-align: center;
-  font-variant-numeric: tabular-nums;
-  box-shadow: 0 2px 6px rgba(30, 25, 12, 0.35);
+  width: 22px;
+  height: 22px;
+  filter: drop-shadow(0 2px 4px rgba(20, 16, 8, 0.45));
   pointer-events: none;
+}
+
+.stop-count svg {
+  display: block;
 }
 
 /* ---------- depot marker ---------- */

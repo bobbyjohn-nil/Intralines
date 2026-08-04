@@ -22,7 +22,10 @@ const BBOX = [-71.9, 42.2, -71.7, 42.36];
       { type: 'node', id: 5, lon: -71.76, lat: 42.30 },
       { type: 'node', id: 6, lon: -71.78, lat: 42.31 },
       { type: 'node', id: 7, lon: -71.78, lat: 42.29 },
-      { type: 'way', id: 100, nodes: [1, 2, 3, 4, 5], tags: { highway: 'residential' } },
+      {
+        type: 'way', id: 100, nodes: [1, 2, 3, 4, 5],
+        tags: { highway: 'residential', name: 'Main Street' },
+      },
       { type: 'way', id: 101, nodes: [6, 3, 7], tags: { highway: 'primary', maxspeed: '35 mph' } },
     ],
   };
@@ -43,6 +46,10 @@ const BBOX = [-71.9, 42.2, -71.7, 42.36];
   assert.equal(primary.length, 2, 'maxspeed mph parsed');
   const withShape = g.edges.filter((e) => e.pts.length > 0);
   assert.equal(withShape.length, 2, 'A-B and B-C keep their shape points');
+  const named = g.edges.filter((e) => e.name === 'Main Street');
+  assert.equal(named.length, 2, 'street name carried onto both split halves');
+  const unnamed = g.edges.filter((e) => e.kmh === 56 && e.name === undefined);
+  assert.equal(unnamed.length, 2, 'nameless ways stay nameless');
 }
 
 // --- road graph: drops ways referencing missing nodes -----------------------

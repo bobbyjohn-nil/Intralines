@@ -268,6 +268,9 @@ export const useGame = create<GameState>((set, get) => {
               if (node !== null) {
                 st.node = node;
                 st.pt = graph.pack.nodes[node];
+                if (/^Stop \d+$/.test(st.name)) {
+                  st.name = graph.stopNameAt(node) ?? st.name;
+                }
               }
             }
             if (sv.depot) {
@@ -461,12 +464,15 @@ export const useGame = create<GameState>((set, get) => {
               break;
             }
           }
-          stop ??= {
-            id: `s${stopSeq++}`,
-            name: `Stop ${stopSeq}`,
-            node,
-            pt: s.graph.pack.nodes[node],
-          };
+          if (!stop) {
+            const streetName = s.graph.stopNameAt(node);
+            stop = {
+              id: `s${stopSeq++}`,
+              name: streetName ?? `Stop ${stopSeq}`,
+              node,
+              pt: s.graph.pack.nodes[node],
+            };
+          }
         }
         const last = s.draft.stops[s.draft.stops.length - 1];
         if (last && last.id === stop.id) return;

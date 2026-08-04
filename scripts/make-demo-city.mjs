@@ -59,7 +59,23 @@ function gridNode(gx, gy) {
 
 const BRIDGE_GYS = new Set([-6, 0, 6]); // bridge rows (every ~1.2km)
 
-function addEdge(gxa, gya, gxb, gyb, kmh) {
+const ST_NAMES = [
+  'Main St', 'Oak St', 'Maple St', 'Cedar St', 'Pine St', 'Elm St', 'Birch St',
+  'Walnut St', 'Chestnut St', 'Spruce St', 'Willow St', 'Aspen St', 'Hickory St',
+  'Laurel St', 'Magnolia St', 'Juniper St', 'Poplar St', 'Sycamore St',
+  'Dogwood St', 'Hawthorn St', 'Linden St', 'Alder St', 'Beech St', 'Holly St',
+  'Ivy St', 'Rose St', 'Garden St', 'Harbor St', 'Mill St',
+];
+function ordinal(n) {
+  const tail = n % 100;
+  if (tail >= 11 && tail <= 13) return `${n}th`;
+  const last = n % 10;
+  return `${n}${last === 1 ? 'st' : last === 2 ? 'nd' : last === 3 ? 'rd' : 'th'}`;
+}
+const aveName = (gx) => `${ordinal(gx + HALF + 1)} Ave`;
+const stName = (gy) => ST_NAMES[(((gy + HALF) % ST_NAMES.length) + ST_NAMES.length) % ST_NAMES.length];
+
+function addEdge(gxa, gya, gxb, gyb, kmh, name) {
   const xa = gxa * BLOCK, ya = gya * BLOCK;
   const xb = gxb * BLOCK, yb = gyb * BLOCK;
   const midX = (xa + xb) / 2, midY = (ya + yb) / 2;
@@ -69,7 +85,9 @@ function addEdge(gxa, gya, gxb, gyb, kmh) {
   const a = gridNode(gxa, gya);
   const b = gridNode(gxb, gyb);
   const lenM = Math.hypot(xb - xa, yb - ya);
-  edges.push({ a, b, lenM: Math.round(lenM), kmh, pts: [] });
+  const edge = { a, b, lenM: Math.round(lenM), kmh, pts: [] };
+  if (name) edge.name = name;
+  edges.push(edge);
 }
 
 for (let gx = -HALF; gx <= HALF; gx++) {
@@ -81,17 +99,21 @@ for (let gx = -HALF; gx <= HALF; gx++) {
     if (suburban && !arterialX && !arterialY && (gx + gy) % 2 !== 0) continue;
     if (gx < HALF) {
       const art = arterialY;
-      if (!suburban || art || gy % 2 === 0) addEdge(gx, gy, gx + 1, gy, art ? 42 : 28);
+      if (!suburban || art || gy % 2 === 0) {
+        addEdge(gx, gy, gx + 1, gy, art ? 42 : 28, stName(gy));
+      }
     }
     if (gy < HALF) {
       const art = arterialX;
-      if (!suburban || art || gx % 2 === 0) addEdge(gx, gy, gx, gy + 1, art ? 42 : 28);
+      if (!suburban || art || gx % 2 === 0) {
+        addEdge(gx, gy, gx, gy + 1, art ? 42 : 28, aveName(gx));
+      }
     }
   }
 }
 
 // Diagonal avenue from SW suburbs to downtown
-for (let i = -12; i < -2; i++) addEdge(i, i, i + 1, i + 1, 45);
+for (let i = -12; i < -2; i++) addEdge(i, i, i + 1, i + 1, 45, 'Riverton Blvd');
 
 // Drop a few random local streets for organic texture (never arterials)
 const keptEdges = edges.filter((e) => e.kmh > 30 || rnd() > 0.06);

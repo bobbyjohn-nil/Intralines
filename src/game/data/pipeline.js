@@ -148,6 +148,10 @@ export function buildRoadGraph(overpass, bbox) {
 
   for (const w of ways) {
     let speed = CLASS_SPEED[w.tags.highway];
+    const streetName =
+      typeof w.tags.name === 'string' && w.tags.name.length
+        ? w.tags.name.slice(0, 48)
+        : undefined;
     const ms = w.tags.maxspeed;
     if (ms) {
       const m = /^(\d+)(\s*mph)?/.exec(ms);
@@ -179,7 +183,9 @@ export function buildRoadGraph(overpass, bbox) {
             const ia = idxOf(idsSeg[0]);
             const ib = idxOf(idsSeg[idsSeg.length - 1]);
             if (ia >= 0 && ib >= 0 && ia !== ib) {
-              edges.push({ a: ia, b: ib, lenM: Math.round(len), kmh: speed, pts });
+              const edge = { a: ia, b: ib, lenM: Math.round(len), kmh: speed, pts };
+              if (streetName) edge.name = streetName;
+              edges.push(edge);
             }
           }
         }

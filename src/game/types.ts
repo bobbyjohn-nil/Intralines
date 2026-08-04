@@ -46,6 +46,8 @@ export interface RoadEdge {
   kmh: number;
   /** intermediate shape points (excluding endpoints) */
   pts: LngLat[];
+  /** street name from OSM (used to name stops) */
+  name?: string;
 }
 
 export interface DemoBuilding {

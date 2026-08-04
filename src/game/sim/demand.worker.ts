@@ -195,15 +195,60 @@ function computeNetwork(msg: NetworkMsg) {
     return (dM / 1000 / lc.l.kmh) * 60 + Math.max(0, stopsBetween) * (DWELL_SEC / 60);
   };
 
-  // transfer table: for each ordered line pair, one shared stop (positions)
-  const sharedStop = new Map<number, { posA: number; posB: number }>();
+  // transfer clusters: stops within a short walk of each other act as one
+  // interchange station, so lines crossing at a corner connect even when
+  // their curbs are separate stops
+  const CLUSTER_M = 130;
+  const parent = stops.map((_, i) => i);
+  const find = (x: number): number => {
+    while (parent[x] !== x) {
+      parent[x] = parent[parent[x]];
+      x = parent[x];
+    }
+    return x;
+  };
+  for (let i = 0; i < stops.length; i++) {
+    const gx = Math.floor(stops[i].pt[0] / cell);
+    const gy = Math.floor(stops[i].pt[1] / cell);
+    for (let x = gx - 1; x <= gx + 1; x++) {
+      for (let y = gy - 1; y <= gy + 1; y++) {
+        const arr = grid.get(`${x}:${y}`);
+        if (!arr) continue;
+        for (const j of arr) {
+          if (j <= i) continue;
+          if (fastKm(stops[i].pt, stops[j].pt) * 1000 <= CLUSTER_M) {
+            const ri = find(i);
+            const rj = find(j);
+            if (ri !== rj) parent[ri] = rj;
+          }
+        }
+      }
+    }
+  }
+
+  // for each ordered line pair, one transfer point (cluster-aware)
+  const sharedStop = new Map<number, { posA: number; posB: number; walkMin: number }>();
   const pairKey = (a: number, b: number) => a * 1024 + b;
-  linesAtStop.forEach((servers) => {
+  const linesAtCluster = new Map<number, { li: number; pos: number; stopIdx: number }[]>();
+  linesAtStop.forEach((servers, si) => {
+    const c = find(si);
+    let arr = linesAtCluster.get(c);
+    if (!arr) {
+      arr = [];
+      linesAtCluster.set(c, arr);
+    }
+    for (const sv of servers) arr.push({ li: sv.li, pos: sv.pos, stopIdx: si });
+  });
+  linesAtCluster.forEach((servers) => {
     for (const s1 of servers) {
       for (const s2 of servers) {
         if (s1.li === s2.li) continue;
         const k = pairKey(s1.li, s2.li);
-        if (!sharedStop.has(k)) sharedStop.set(k, { posA: s1.pos, posB: s2.pos });
+        const walkMin = s1.stopIdx === s2.stopIdx ? 0 : 1.5;
+        const prev = sharedStop.get(k);
+        if (!prev || walkMin < prev.walkMin) {
+          sharedStop.set(k, { posA: s1.pos, posB: s2.pos, walkMin });
+        }
       }
     }
   });
@@ -246,6 +291,7 @@ function computeNetwork(msg: NetworkMsg) {
                 waitA +
                 rideMin(la.li, la.pos, sh.posA) +
                 TRANSFER_PENALTY_MIN +
+                sh.walkMin +
                 Math.min(lineCalc[lb.li].headwayEff / 2, MAX_WAIT_MIN) +
                 rideMin(lb.li, sh.posB, lb.pos) +
                 b.walkMin;

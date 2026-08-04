@@ -103,8 +103,12 @@ export function MapView({ pack }: { pack: CityPack }) {
       });
       busLayerRef.current = busLayer;
       // debug/testing hooks
-      (window as unknown as { __busLayer?: BusLayer3D; __map?: MLMap }).__busLayer = busLayer;
-      (window as unknown as { __busLayer?: BusLayer3D; __map?: MLMap }).__map = map;
+      const dbg = window as unknown as {
+        __busLayer?: BusLayer3D; __map?: MLMap; __game?: typeof useGame;
+      };
+      dbg.__busLayer = busLayer;
+      dbg.__map = map;
+      dbg.__game = useGame;
 
       map.on('load', () => {
         if (!map) return;
@@ -174,8 +178,22 @@ export function MapView({ pack }: { pack: CityPack }) {
             chips.set(c.id, m);
           }
           const el = m.getElement();
-          const label = String(c.count);
-          if (el.textContent !== label) el.textContent = label;
+          if (el.dataset.count !== String(c.count)) {
+            el.dataset.count = String(c.count);
+            // circular gauge: fills as the crowd builds (full at ~14 waiting)
+            const frac = Math.min(c.count / 14, 1);
+            const R = 8.5;
+            const circ = 2 * Math.PI * R;
+            const color = frac < 0.55 ? '#74b06f' : frac < 0.85 ? '#e0a13c' : '#d16060';
+            el.innerHTML =
+              `<svg viewBox="0 0 24 24" width="22" height="22">` +
+              `<circle cx="12" cy="12" r="${R}" fill="rgba(30,28,22,0.78)" ` +
+              `stroke="rgba(255,252,240,0.35)" stroke-width="3.5"/>` +
+              `<circle cx="12" cy="12" r="${R}" fill="none" stroke="${color}" ` +
+              `stroke-width="3.5" stroke-linecap="round" ` +
+              `stroke-dasharray="${(frac * circ).toFixed(1)} ${circ.toFixed(1)}" ` +
+              `transform="rotate(-90 12 12)"/></svg>`;
+          }
           el.title = `${c.count} waiting`;
         }
         for (const [id, m] of chips) {
@@ -207,9 +225,51 @@ export function MapView({ pack }: { pack: CityPack }) {
           map.setPaintProperty('water', 'fill-color', blend(PALETTE.water, '#1d3050'));
         }
         if (map.getLayer('building-3d')) {
-          map.setPaintProperty(
-            'building-3d', 'fill-extrusion-color', blend(PALETTE.building3d, '#3a3f4e'),
-          );
+          // height-tinted so towers read differently from row houses; the
+          // coalesce covers both the pack schema (h) and OpenMapTiles.
+          map.setPaintProperty('building-3d', 'fill-extrusion-color', [
+            'interpolate', ['linear'],
+            ['coalesce', ['get', 'h'], ['get', 'render_height'], 8],
+            6, blend('#eadfc8', '#383d4a'),
+            24, blend(PALETTE.building3d, '#3a3f4e'),
+            70, blend('#d3cbc0', '#414654'),
+          ]);
+        }
+        if (map.getLayer('parks')) {
+          map.setPaintProperty('parks', 'fill-color', blend(PALETTE.park, '#2f3b2c'));
+        }
+        // roads dim to asphalt tones after dark
+        if (map.getLayer('road')) {
+          // offline pack style: tiered by speed inside one layer
+          map.setPaintProperty('road', 'line-color', [
+            'case',
+            ['>=', ['get', 'kmh'], 70], blend(PALETTE.motorway, '#57503c'),
+            ['>=', ['get', 'kmh'], 42], blend(PALETTE.primary, '#514b3a'),
+            ['>=', ['get', 'kmh'], 38], blend(PALETTE.tertiary, '#484659'),
+            blend(PALETTE.street, '#434a5a'),
+          ]);
+          map.setPaintProperty('road-casing', 'line-color', [
+            'case',
+            ['>=', ['get', 'kmh'], 70], blend(PALETTE.motorwayCasing, '#3a3527'),
+            ['>=', ['get', 'kmh'], 42], blend(PALETTE.primaryCasing, '#37332a'),
+            ['>=', ['get', 'kmh'], 38], blend(PALETTE.tertiaryCasing, '#2c3038'),
+            blend(PALETTE.streetCasing, '#272c37'),
+          ]);
+        }
+        const ONLINE_NIGHT: [string, string, string][] = [
+          ['road-minor', PALETTE.street, '#434a5a'],
+          ['road-minor-casing', PALETTE.streetCasing, '#272c37'],
+          ['road-tertiary', PALETTE.tertiary, '#484659'],
+          ['road-tertiary-casing', PALETTE.tertiaryCasing, '#2c3038'],
+          ['road-secondary', '#fff8ea', '#484659'],
+          ['road-secondary-casing', PALETTE.streetCasing, '#272c37'],
+          ['road-primary', PALETTE.primary, '#514b3a'],
+          ['road-primary-casing', PALETTE.primaryCasing, '#37332a'],
+          ['road-motorway', PALETTE.motorway, '#57503c'],
+          ['road-motorway-casing', PALETTE.motorwayCasing, '#3a3527'],
+        ];
+        for (const [id, dayC, nightC] of ONLINE_NIGHT) {
+          if (map.getLayer(id)) map.setPaintProperty(id, 'line-color', blend(dayC, nightC));
         }
       }, 1500);
     };
@@ -231,6 +291,26 @@ export function MapView({ pack }: { pack: CityPack }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pack.meta.id, basemapPref]);
 
+  function lineIntersections(): Map<string, number[]> {
+    const st = useGame.getState();
+    const out = new Map<string, number[]>();
+    const g = st.graph;
+    if (!g) return out;
+    const keys = g.intersectionKeys();
+    for (const l of st.lines) {
+      const ds: number[] = [];
+      for (let i = 0; i < l.path.length; i++) {
+        const pnt = l.path[i];
+        if (keys.has(`${Math.round(pnt[0] * 1e5)}:${Math.round(pnt[1] * 1e5)}`)) {
+          const d = l.cum[i];
+          if (!ds.length || d - ds[ds.length - 1] > 30) ds.push(d);
+        }
+      }
+      out.set(l.id, ds);
+    }
+    return out;
+  }
+
   function syncAll(): void {
     const map = mapRef.current;
     if (!map || !readyRef.current) return;
@@ -239,7 +319,9 @@ export function MapView({ pack }: { pack: CityPack }) {
     updateNetwork(map, st.stops, st.lines, st.selectedLineId);
     updateDraft(map, st.draft);
     syncDepot();
-    busLayerRef.current?.setNetwork(st.lines, st.stats?.perLine ?? [], st.stops);
+    busLayerRef.current?.setNetwork(
+      st.lines, st.stats?.perLine ?? [], st.stops, lineIntersections(),
+    );
   }
 
   function syncDepot(): void {
@@ -286,8 +368,11 @@ export function MapView({ pack }: { pack: CityPack }) {
 
   useEffect(() => {
     if (readyRef.current) {
-      busLayerRef.current?.setNetwork(lines, stats?.perLine ?? [], stops);
+      busLayerRef.current?.setNetwork(
+        lines, stats?.perLine ?? [], stops, lineIntersections(),
+      );
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lines, stats, stops]);
 
   useEffect(() => {

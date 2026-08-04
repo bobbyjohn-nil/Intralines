@@ -63,6 +63,30 @@ export class RoadGraph {
     return hit === null ? null : hit.item;
   }
 
+  /** name a stop after the street(s) meeting at its node */
+  stopNameAt(node: number): string | null {
+    const names: string[] = [];
+    for (const { edge } of this.adj[node] ?? []) {
+      const n = this.pack.edges[edge]?.name;
+      if (n && !names.some((x) => x.toLowerCase() === n.toLowerCase())) names.push(n);
+      if (names.length === 2) break;
+    }
+    if (!names.length) return null;
+    return names.length === 2 ? `${names[0]} & ${names[1]}` : names[0];
+  }
+
+  /** quantized coordinate keys of every real street intersection (degree >= 3) */
+  intersectionKeys(): Set<string> {
+    const out = new Set<string>();
+    for (let i = 0; i < this.adj.length; i++) {
+      if (this.adj[i].length >= 3) {
+        const p = this.pack.nodes[i];
+        out.add(`${Math.round(p[0] * 1e5)}:${Math.round(p[1] * 1e5)}`);
+      }
+    }
+    return out;
+  }
+
   /**
    * Precise stop placement: project the click onto the nearest street and
    * split that street there, creating a routable node exactly at the curb —
@@ -145,7 +169,7 @@ export class RoadGraph {
     e.pts = ptsA;
     e.lenM = lenA;
     const newEdgeIdx = this.pack.edges.length;
-    this.pack.edges.push({ a: newNode, b: oldB, lenM: lenB, kmh: e.kmh, pts: ptsB });
+    this.pack.edges.push({ a: newNode, b: oldB, lenM: lenB, kmh: e.kmh, pts: ptsB, name: e.name });
 
     // incremental index update (full rebuilds are too slow on real cities)
     this.adj.push([]);
@@ -175,7 +199,8 @@ export class RoadGraph {
     const prev = new Int32Array(n).fill(-1);
     const prevEdge = new Int32Array(n).fill(-1);
     const goal = this.pack.nodes[to];
-    const h = (i: number) => fastDistM(this.pack.nodes[i], goal, this.cosLat);
+    const h = (i: number) =>
+      (fastDistM(this.pack.nodes[i], goal, this.cosLat) / (MAX_KMH / 3.6));
 
     // binary heap of [f, node]
     const heap: number[] = [];
@@ -215,9 +240,10 @@ export class RoadGraph {
       return top;
     };
 
-    // penalize direction changes so routes run straight along arterials like
-    // real bus lines instead of staircasing through grids
-    const turnPenaltyM = (w: number, u: number, v: number): number => {
+    // travel-time routing: buses prefer faster arterials over shortcut
+    // side streets, like real bus lines. Costs are seconds.
+    const MAX_KMH = 100;
+    const turnPenaltySec = (w: number, u: number, v: number): number => {
       if (w < 0) return 0;
       const A = this.pack.nodes[w];
       const B = this.pack.nodes[u];
@@ -227,9 +253,9 @@ export class RoadGraph {
       let deg = Math.abs(((d2 - d1) * 180) / Math.PI);
       if (deg > 180) deg = 360 - deg;
       if (deg < 30) return 0;
-      if (deg < 70) return 12;
-      if (deg < 120) return 45;
-      return 140; // sharp turns / U-turns
+      if (deg < 70) return 4;
+      if (deg < 120) return 10;
+      return 25; // sharp turns / U-turns
     };
 
     dist[from] = 0;
@@ -241,7 +267,9 @@ export class RoadGraph {
       if (closed[u]) continue;
       closed[u] = 1;
       for (const { to: v, edge, lenM } of this.adj[u]) {
-        const nd = dist[u] + lenM + turnPenaltyM(prev[u], u, v);
+        const kmh = this.pack.edges[edge].kmh || 30;
+        const travelSec = lenM / (kmh / 3.6);
+        const nd = dist[u] + travelSec + turnPenaltySec(prev[u], u, v);
         if (nd < dist[v]) {
           dist[v] = nd;
           prev[v] = u;

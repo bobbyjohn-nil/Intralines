@@ -40,6 +40,8 @@ interface LineAnim {
   cycleMin: number;
   meshes: THREE.Group[];
   seed: number;
+  /** distances along the path of real street intersections */
+  intersections: number[];
 }
 
 interface StopSite {
@@ -108,6 +110,39 @@ function kinematicDist(D: number, T: number, t: number): number {
   return D - 0.5 * a2 * r * r;
 }
 
+/** accelerate from rest, then hold cruise speed to cover D in T (no end stop) */
+function accelCruise(D: number, T: number, t: number, a: number): number {
+  t = Math.max(0, Math.min(t, T));
+  const disc = a * a * T * T - 2 * a * D;
+  if (disc < 0 || T <= 0.01) return (D * t) / Math.max(T, 0.01); // too tight: linear
+  const vc = a * T - Math.sqrt(disc);
+  const ta = Math.min(vc / a, T);
+  if (t <= ta) return 0.5 * a * t * t;
+  return 0.5 * a * ta * ta + vc * (t - ta);
+}
+
+/**
+ * A sub-leg between full stops. Normally pure kinematics (rest -> cruise ->
+ * rest). In congestion the middle third crawls at reduced speed — the bus
+ * visibly slows and speeds back up, but never halts mid-block.
+ */
+function subLegDist(D: number, T: number, t: number, slow: boolean): number {
+  if (!slow || D < 120 || T < 8) return kinematicDist(D, T, t);
+  t = Math.max(0, Math.min(t, T));
+  // distances 35/30/35, paces 1 / 0.45 / 1  =>  time weights .35/.667/.35
+  const wSum = 0.35 + 0.3 / 0.45 + 0.35;
+  const T0 = (T * 0.35) / wSum;
+  const T1 = (T * (0.3 / 0.45)) / wSum;
+  const T2 = T - T0 - T1;
+  const D0 = 0.35 * D;
+  const D1 = 0.3 * D;
+  const D2 = D - D0 - D1;
+  if (t <= T0) return accelCruise(D0, T0, t, BUS_ACCEL);
+  if (t <= T0 + T1) return D0 + (D1 * (t - T0)) / T1; // crawling through the jam
+  // mirror of accelCruise: cruise then brake to rest at the end
+  return D - accelCruise(D2, T2, T - t, BUS_DECEL);
+}
+
 export class BusLayer3D implements CustomLayerInterface {
   id = 'buses-3d';
   type = 'custom' as const;
@@ -124,7 +159,12 @@ export class BusLayer3D implements CustomLayerInterface {
   private anims: LineAnim[] = [];
   private ambient = new THREE.AmbientLight(0xffffff, 2.1);
   private sun = new THREE.DirectionalLight(0xffffff, 1.6);
-  private pendingNetwork: { lines: BusLine[]; stats: LineStats[]; stops: Stop[] } | null = null;
+  private pendingNetwork: {
+    lines: BusLine[];
+    stats: LineStats[];
+    stops: Stop[];
+    intersections?: Map<string, number[]>;
+  } | null = null;
 
   // passengers
   private sites: StopSite[] = [];
@@ -167,9 +207,9 @@ export class BusLayer3D implements CustomLayerInterface {
       });
     }
     if (this.pendingNetwork) {
-      const { lines, stats, stops } = this.pendingNetwork;
+      const { lines, stats, stops, intersections } = this.pendingNetwork;
       this.pendingNetwork = null;
-      this.setNetwork(lines, stats, stops);
+      this.setNetwork(lines, stats, stops, intersections);
     }
   }
 
@@ -196,9 +236,14 @@ export class BusLayer3D implements CustomLayerInterface {
     this.sun.color = night.clone().lerp(warm, day);
   }
 
-  setNetwork(lines: BusLine[], stats: LineStats[], stops: Stop[]): void {
+  setNetwork(
+    lines: BusLine[],
+    stats: LineStats[],
+    stops: Stop[],
+    intersections?: Map<string, number[]>,
+  ): void {
     if (!this.renderer) {
-      this.pendingNetwork = { lines, stats, stops };
+      this.pendingNetwork = { lines, stats, stops, intersections };
       return;
     }
     this.anims.forEach((a) => a.meshes.forEach((m) => this.scene.remove(m)));
@@ -273,6 +318,7 @@ export class BusLayer3D implements CustomLayerInterface {
         cycleMin,
         meshes,
         seed: hash32(line.id.split('').reduce((s, c) => s * 31 + c.charCodeAt(0), 7)),
+        intersections: intersections?.get(line.id) ?? [],
       });
     }
     this.map?.triggerRepaint();
@@ -286,8 +332,9 @@ export class BusLayer3D implements CustomLayerInterface {
 
   /**
    * Distance along one outbound run at profile-time t. Drive segments use
-   * real accelerate/cruise/brake physics; deterministic traffic holds split a
-   * segment into sub-runs with a full stop (brake, wait, pull away) between.
+   * real accelerate/cruise/brake physics. Full stops happen ONLY at real
+   * street intersections (deterministic red lights, likelier in rush hour);
+   * mid-block traffic shows up as a visible slowdown, never a dead stop.
    */
   private outboundDist(a: LineAnim, t: number, cycleIdx: number, veh: number, congestion: number): number {
     for (let i = 0; i < a.segs.length; i++) {
@@ -297,28 +344,31 @@ export class BusLayer3D implements CustomLayerInterface {
       const D = s.d1 - s.d0;
       const Tmin = s.t1 - s.t0;
       const tIn = t - s.t0;
-
-      // deterministic holds (red lights / traffic), heavier at rush hour
       const jam = Math.max(0, congestion - 0.95);
+
+      // red lights: pick up to 2 of the real intersections inside this block
+      const candidates = a.intersections.filter(
+        (d) => d > s.d0 + 25 && d < s.d1 - 25,
+      );
       const holds: { p: number; frac: number }[] = [];
       let holdFrac = 0;
-      for (let hIdx = 0; hIdx < 2; hIdx++) {
-        const roll = rand01(a.seed, veh, cycleIdx, i, hIdx);
-        if (roll < 0.18 + jam * 0.9) {
-          const p = 0.18 + 0.64 * rand01(a.seed, veh, cycleIdx, i, hIdx + 10);
-          const frac = (0.05 + 0.11 * rand01(a.seed, veh, cycleIdx, i, hIdx + 20)) * (1 + jam);
-          holds.push({ p, frac });
+      for (let c = 0; c < candidates.length && holds.length < 2; c++) {
+        const roll = rand01(a.seed, veh, cycleIdx, i, c);
+        if (roll < 0.3 + jam * 0.45) {
+          const frac =
+            (0.05 + 0.09 * rand01(a.seed, veh, cycleIdx, i, c + 40)) * (1 + jam * 0.8);
+          holds.push({ p: (candidates[c] - s.d0) / D, frac });
           holdFrac += frac;
         }
       }
-      if (holdFrac > 0.45) {
-        const f = 0.45 / holdFrac;
+      if (holdFrac > 0.4) {
+        const f = 0.4 / holdFrac;
         holds.forEach((h) => (h.frac *= f));
-        holdFrac = 0.45;
+        holdFrac = 0.4;
       }
       holds.sort((x, y) => x.p - y.p);
 
-      // build sub-legs: drive, stop, drive, ... with time ∝ distance
+      // sub-legs between red lights; time ∝ distance
       const Tsec = Tmin * 60;
       const driveSec = Tsec * (1 - holdFrac);
       const cuts = [0, ...holds.map((h) => h.p), 1];
@@ -328,14 +378,16 @@ export class BusLayer3D implements CustomLayerInterface {
       for (let leg = 0; leg < cuts.length - 1; leg++) {
         const legD = (cuts[leg + 1] - cuts[leg]) * D;
         const legT = driveSec * ((cuts[leg + 1] - cuts[leg]) || 0);
+        // mid-block congestion: crawl through the middle without stopping
+        const slow = jam > 0.05 && rand01(a.seed, veh, cycleIdx, i, leg + 80) < jam * 0.9;
         if (tSec <= cursorSec + legT || leg === cuts.length - 2) {
-          return acc + kinematicDist(legD, legT, tSec - cursorSec);
+          return acc + subLegDist(legD, legT, tSec - cursorSec, slow);
         }
         cursorSec += legT;
         acc += legD;
         if (leg < holds.length) {
           const holdSec = holds[leg].frac * Tsec;
-          if (tSec <= cursorSec + holdSec) return acc; // stopped at the light
+          if (tSec <= cursorSec + holdSec) return acc; // waiting at the light
           cursorSec += holdSec;
         }
       }
