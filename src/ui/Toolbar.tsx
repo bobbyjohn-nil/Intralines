@@ -1,11 +1,9 @@
 import { useGame } from '../game/store';
 import type { Panel } from '../game/store';
 import {
-  IconBus, IconChart, IconDepot, IconGlobe, IconHeat, IconHelp, IconMapFold,
+  IconBus, IconChart, IconDepot, IconGlobe, IconHelp, IconMapFold,
   IconPeople, IconPlus, IconPointer, IconRoute,
 } from './icons';
-
-const HEAT_LABEL = { off: 'Off', pop: 'People', jobs: 'Jobs' } as const;
 
 /** the horizontal command dock along the bottom of the screen */
 export function Toolbar() {
@@ -22,8 +20,6 @@ export function Toolbar() {
   const toggleBasemap = useGame((s) => s.toggleBasemap);
 
   const togglePanel = (p: Panel) => setPanel(panel === p ? 'none' : p);
-  const cycleHeat = () =>
-    setHeatmap(heatmap === 'off' ? 'pop' : heatmap === 'pop' ? 'jobs' : 'off');
 
   return (
     <div className="dock">
@@ -53,14 +49,24 @@ export function Toolbar() {
           <span>Place depot</span>
         </button>
       )}
-      <button
-        className={heatmap !== 'off' ? 'on' : ''}
-        onClick={cycleHeat}
-        title="Cycle the census demand heatmap: residents, jobs, off"
-      >
-        <IconHeat />
-        <span>Heatmap · {HEAT_LABEL[heatmap]}</span>
-      </button>
+      <div className="dock-split">
+        <button
+          className={heatmap === 'pop' ? 'on' : ''}
+          onClick={() => setHeatmap(heatmap === 'pop' ? 'off' : 'pop')}
+          title="Toggle the residents demand heatmap"
+        >
+          <IconPeople size={13} />
+          <span>People</span>
+        </button>
+        <button
+          className={heatmap === 'jobs' ? 'on' : ''}
+          onClick={() => setHeatmap(heatmap === 'jobs' ? 'off' : 'jobs')}
+          title="Toggle the jobs demand heatmap"
+        >
+          <IconChart size={13} />
+          <span>Jobs</span>
+        </button>
+      </div>
       {pack?.meta.kind === 'real' && (
         <button
           onClick={toggleBasemap}

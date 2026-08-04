@@ -5,7 +5,8 @@ import type {
 import {
   BUS_MODELS, DEPOT_CAPACITY, DEPOT_COST, DEPOT_UPGRADE_COST, DEPOT_UPKEEP_PER_DAY,
   BUSES_PER_MECHANIC, CHARGERS_COST, HEADWAY_CHOICES, LINE_COLORS, LOAN_AMOUNT,
-  LOAN_WEEKLY_INTEREST, MECHANIC_WAGE_PER_DAY, OFFICE_OVERHEAD_PER_DAY, SAVE_KEY_PREFIX,
+  LOAN_FEE, LOAN_PAYOFF, LOAN_WEEKLY_INTEREST, MECHANIC_WAGE_PER_DAY,
+  OFFICE_OVERHEAD_PER_DAY, SAVE_KEY_PREFIX,
   SAVE_VERSION, SPEEDS, START_CASH, STOP_COST, STOP_TIER_NAMES, STOP_UPGRADE_COST,
   SUBSIDY_PER_RIDER, WASH_BAY_COST, WORKSHOP_COST,
 } from './constants';
@@ -102,6 +103,7 @@ export interface GameState {
   upgradeStop: (stopId: string) => void;
   buyDepotAddon: (addon: 'workshop' | 'washBay' | 'chargers') => void;
   takeLoan: () => void;
+  repayLoan: () => void;
   notify: (text: string, kind?: Notice['kind']) => void;
   dismissNotice: (id: number) => void;
   saveGame: () => void;
@@ -764,11 +766,29 @@ export const useGame = create<GameState>((set, get) => {
     takeLoan: () => {
       const s = get();
       if (s.loanTaken) return;
-      set({ cash: s.cash + LOAN_AMOUNT, loanTaken: true });
+      set({ cash: s.cash + LOAN_AMOUNT - LOAN_FEE, loanTaken: true });
       get().notify(
-        `Loan received: $${LOAN_AMOUNT.toLocaleString()} (interest $${LOAN_WEEKLY_INTEREST.toLocaleString()}/week).`,
-        'info',
+        `Talon & Grasp wires $${((LOAN_AMOUNT - LOAN_FEE) / 1000).toFixed(0)}k ` +
+          `(after their $${(LOAN_FEE / 1000).toFixed(0)}k "arrangement fee"). ` +
+          `$${(LOAN_WEEKLY_INTEREST / 1000).toFixed(0)}k/week interest, forever. ` +
+          'They smile as you sign.',
+        'bad',
       );
+    },
+
+    repayLoan: () => {
+      const s = get();
+      if (!s.loanTaken) return;
+      if (s.cash < LOAN_PAYOFF) {
+        get().notify(
+          `Talon & Grasp want $${(LOAN_PAYOFF / 1000).toFixed(0)}k to close the account.`,
+          'bad',
+        );
+        return;
+      }
+      set({ cash: s.cash - LOAN_PAYOFF, loanTaken: false });
+      get().notify('Debt cleared. Somewhere, a vulture sheds a single tear.', 'good');
+      get().saveGame();
     },
 
     notify: (text, kind = 'info') => {

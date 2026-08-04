@@ -187,9 +187,15 @@ export function updateHeatmap(
   );
   const sorted = [...dens].sort((a, b) => a - b);
   const p85 = sorted[Math.floor(sorted.length * 0.85)] || 1;
+  // sqrt + floor so small demand pockets still read on the map instead of
+  // vanishing next to downtown's hotspots
   const features = pack.blockGroups.map((bg, i) => ({
     type: 'Feature' as const,
-    properties: { w: Math.min(dens[i] / p85, 1) },
+    properties: {
+      w: dens[i] > 0
+        ? Math.min(0.22 + 0.78 * Math.sqrt(Math.min(dens[i] / p85, 1)), 1)
+        : 0,
+    },
     geometry: { type: 'Point' as const, coordinates: bg.centroid },
   }));
   if (map.getLayer('heatmap-blob')) {

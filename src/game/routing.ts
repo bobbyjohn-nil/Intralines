@@ -75,6 +75,12 @@ export class RoadGraph {
     return names.length === 2 ? `${names[0]} & ${names[1]}` : names[0];
   }
 
+  /** speed limit (km/h) of the street nearest pt — used for traffic modeling */
+  speedNear(pt: LngLat, maxM = 60): number | null {
+    const hit = this.edgeGrid.nearest(pt, maxM);
+    return hit === null ? null : this.pack.edges[hit.item]?.kmh ?? null;
+  }
+
   /** quantized coordinate keys of every real street intersection (degree >= 3) */
   intersectionKeys(): Set<string> {
     const out = new Set<string>();

@@ -32,7 +32,7 @@ const round6 = (v) => Math.round(v * 1e6) / 1e6;
 // ---------------------------------------------------------------------------
 // Road grid: 200m blocks downtown, 400m in suburbs. x,y in meters, origin center.
 const BLOCK = 200;
-const HALF = 14; // grid half-extent in blocks => city ~5.6km wide
+const HALF = 18; // grid half-extent in blocks => city ~14.4km wide
 const nodes = [];
 const nodeIdx = new Map(); // "gx:gy" -> index
 const edges = [];
@@ -159,11 +159,13 @@ const outEdges = keptEdges
 // Block groups: 400m cells. Population from a downtown-centered falloff plus
 // neighborhoods; jobs concentrated downtown / industrial / university.
 const CELL = 400;
-const CH = 7; // half-extent in cells => 5.6km
+const CH = 13; // half-extent in cells => 10.4km
 const blockGroups = [];
 const UNI = { x: -1600, y: 1800 }; // university NW
 const IND = { x: 1800, y: -1800 }; // industrial park SE (across river)
 const MALL = { x: -2000, y: -400 };
+const EASTVILLE = { x: 4800, y: 2400 }; // satellite town NE
+const WESTON = { x: -4600, y: -3400 }; // satellite town SW
 
 let bgSeq = 0;
 for (let cx = -CH; cx < CH; cx++) {
@@ -176,7 +178,14 @@ for (let cx = -CH; cx < CH; cx++) {
     const dInd = Math.hypot(cxm - IND.x, cym - IND.y);
     const dMall = Math.hypot(cxm - MALL.x, cym - MALL.y);
 
-    let popDens = 5200 * Math.exp(-dDowntown / 1500) + 2600 * Math.exp(-dUni / 900);
+    const dEast = Math.hypot(cxm - EASTVILLE.x, cym - EASTVILLE.y);
+    const dWest = Math.hypot(cxm - WESTON.x, cym - WESTON.y);
+    let popDens =
+      5200 * Math.exp(-dDowntown / 1500) +
+      2600 * Math.exp(-dUni / 900) +
+      1900 * Math.exp(-dEast / 700) +
+      1500 * Math.exp(-dWest / 650) +
+      240 * Math.exp(-dDowntown / 4200); // thin suburban carpet
     popDens *= 0.75 + rnd() * 0.5;
     if (dInd < 700) popDens *= 0.15; // nobody lives in the industrial park
     let pop = popDens * 0.16; // cell is 0.16 km²
@@ -186,6 +195,8 @@ for (let cx = -CH; cx < CH; cx++) {
       1500 * Math.exp(-dInd / 500) +
       900 * Math.exp(-dUni / 400) +
       700 * Math.exp(-dMall / 350) +
+      520 * Math.exp(-dEast / 450) +
+      380 * Math.exp(-dWest / 420) +
       pop * 0.06;
     jobs *= 0.7 + rnd() * 0.6;
 

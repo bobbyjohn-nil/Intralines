@@ -31,6 +31,18 @@ interface BusUserData {
   taillights: THREE.Mesh[];
 }
 
+/** per-line context computed by MapView from the road graph + census */
+export interface LineExtras {
+  /** distances along the path of real street intersections */
+  intersections: number[];
+  /** 0..1 — how dense the corridor's surroundings are */
+  urban: number;
+  /** 0..1 — share of the corridor on main roads (>= 42 km/h) */
+  mainShare: number;
+  /** street route from the depot to the line's first stop (deadhead) */
+  depotPath?: { path: LngLat[]; cum: number[]; lenM: number };
+}
+
 interface LineAnim {
   line: BusLine;
   vehicles: number;
@@ -40,8 +52,11 @@ interface LineAnim {
   cycleMin: number;
   meshes: THREE.Group[];
   seed: number;
-  /** distances along the path of real street intersections */
   intersections: number[];
+  urban: number;
+  mainShare: number;
+  depotPath?: { path: LngLat[]; cum: number[]; lenM: number };
+  modelKmh: number;
 }
 
 interface StopSite {
@@ -163,7 +178,7 @@ export class BusLayer3D implements CustomLayerInterface {
     lines: BusLine[];
     stats: LineStats[];
     stops: Stop[];
-    intersections?: Map<string, number[]>;
+    extras?: Map<string, LineExtras>;
   } | null = null;
 
   // passengers
@@ -207,9 +222,9 @@ export class BusLayer3D implements CustomLayerInterface {
       });
     }
     if (this.pendingNetwork) {
-      const { lines, stats, stops, intersections } = this.pendingNetwork;
+      const { lines, stats, stops, extras } = this.pendingNetwork;
       this.pendingNetwork = null;
-      this.setNetwork(lines, stats, stops, intersections);
+      this.setNetwork(lines, stats, stops, extras);
     }
   }
 
@@ -240,10 +255,10 @@ export class BusLayer3D implements CustomLayerInterface {
     lines: BusLine[],
     stats: LineStats[],
     stops: Stop[],
-    intersections?: Map<string, number[]>,
+    extras?: Map<string, LineExtras>,
   ): void {
     if (!this.renderer) {
-      this.pendingNetwork = { lines, stats, stops, intersections };
+      this.pendingNetwork = { lines, stats, stops, extras };
       return;
     }
     this.anims.forEach((a) => a.meshes.forEach((m) => this.scene.remove(m)));
@@ -309,6 +324,7 @@ export class BusLayer3D implements CustomLayerInterface {
         this.scene.add(g);
         meshes.push(g);
       }
+      const ex = extras?.get(line.id);
       this.anims.push({
         line,
         vehicles: st.vehiclesUsed,
@@ -318,7 +334,11 @@ export class BusLayer3D implements CustomLayerInterface {
         cycleMin,
         meshes,
         seed: hash32(line.id.split('').reduce((s, c) => s * 31 + c.charCodeAt(0), 7)),
-        intersections: intersections?.get(line.id) ?? [],
+        intersections: ex?.intersections ?? [],
+        urban: ex?.urban ?? 0.5,
+        mainShare: ex?.mainShare ?? 0.5,
+        depotPath: ex?.depotPath,
+        modelKmh: model.kmh,
       });
     }
     this.map?.triggerRepaint();
@@ -415,19 +435,25 @@ export class BusLayer3D implements CustomLayerInterface {
     return null;
   }
 
-  private smoothBearing(line: BusLine, d: number, forward: boolean): { pt: LngLat; bearing: number } {
-    const { pt } = pointAlong(line.path, line.cum, d);
-    const ahead = forward ? Math.min(d + 8, line.pathLenM) : Math.max(d - 8, 0);
-    const { pt: pt2 } = pointAlong(line.path, line.cum, ahead);
+  private bearingAlong(
+    path: LngLat[], cum: number[], lenM: number, d: number, forward: boolean,
+  ): { pt: LngLat; bearing: number } {
+    const { pt } = pointAlong(path, cum, d);
+    const ahead = forward ? Math.min(d + 8, lenM) : Math.max(d - 8, 0);
+    const { pt: pt2 } = pointAlong(path, cum, ahead);
     const dx = (pt2[0] - pt[0]) * this.cosLat;
     const dy = pt2[1] - pt[1];
     let bearing;
     if (Math.abs(dx) + Math.abs(dy) < 1e-9) {
-      bearing = pointAlong(line.path, line.cum, d).bearing + (forward ? 0 : 180);
+      bearing = pointAlong(path, cum, d).bearing + (forward ? 0 : 180);
     } else {
       bearing = (Math.atan2(dx, dy) * 180) / Math.PI;
     }
     return { pt, bearing };
+  }
+
+  private smoothBearing(line: BusLine, d: number, forward: boolean): { pt: LngLat; bearing: number } {
+    return this.bearingAlong(line.path, line.cum, line.pathLenM, d, forward);
   }
 
   private toLocal(pt: LngLat): { x: number; z: number } {
@@ -468,40 +494,74 @@ export class BusLayer3D implements CustomLayerInterface {
 
     const servedNow = new Set<string>();
     this.lastFrame = [];
+    const jamBase = congestion; // citywide hour curve
     for (const a of this.anims) {
       const { line } = a;
       const svcStart = line.firstHour * 60;
       const svcEnd = line.lastHour * 60;
-      const cycleEff = a.cycleMin * congestion;
+      // where the line runs decides how bad traffic gets: downtown arterials
+      // grind to a near-standstill at rush hour, rural side streets barely
+      // notice it
+      const gain = a.urban * (1.2 + 1.2 * a.mainShare) + 0.08;
+      const cong = 1 + (jamBase - 1) * (jamBase >= 1 ? gain : Math.min(gain, 1));
+      const cycleEff = a.cycleMin * cong;
+      const dp = a.depotPath;
+      const deadMin = dp ? (dp.lenM / 1000 / a.modelKmh) * 60 + 0.2 : 0;
+      const deadDur = deadMin * cong;
       for (let k = 0; k < a.vehicles; k++) {
         const mesh = a.meshes[k];
         const firstDep = svcStart + k * a.headwayEff;
         let visible = false;
         let seenPt: LngLat | null = null;
-        if (dayMin >= firstDep) {
+        let hit: { pt: LngLat; bearing: number; lineD: number | null } | null = null;
+
+        if (dp && dayMin >= firstDep - deadDur && dayMin < firstDep) {
+          // pull-out: rolls from the depot to the first stop before service
+          const tSec = ((dayMin - (firstDep - deadDur)) / cong) * 60;
+          const d = kinematicDist(dp.lenM, deadMin * 60, tSec);
+          const { pt, bearing } = this.bearingAlong(dp.path, dp.cum, dp.lenM, d, true);
+          hit = { pt, bearing, lineD: null };
+        } else if (dayMin >= firstDep) {
           const since = dayMin - firstDep;
           const lastDepartureCutoff = svcEnd - firstDep;
           const cycleIdx = Math.floor(since / cycleEff);
           const cycleStart = cycleIdx * cycleEff;
           if (cycleStart <= lastDepartureCutoff) {
-            const tProfile = (since - cycleStart) / congestion;
-            const pos = this.distAt(a, tProfile, cycleIdx, k, congestion);
+            const tProfile = (since - cycleStart) / cong;
+            const pos = this.distAt(a, tProfile, cycleIdx, k, cong);
             if (pos) {
               const { pt, bearing } = this.smoothBearing(line, pos.d, pos.forward);
-              const b = pos.forward ? bearing : bearing + 180;
-              const { x, z } = this.toLocal(pt);
-              mesh.position.set(x, 0, z);
-              mesh.rotation.y = Math.PI / 2 - (b * Math.PI) / 180;
-              mesh.scale.setScalar(busScale);
-              applyBusLighting(mesh, day);
-              visible = true;
-              seenPt = pt;
-              // is this bus at (or basically at) one of its stops?
-              for (let si = 0; si < line.stopDist.length; si++) {
-                if (Math.abs(pos.d - line.stopDist[si]) < 25) {
-                  servedNow.add(line.stopIds[si]);
-                  break;
-                }
+              hit = { pt, bearing: pos.forward ? bearing : bearing + 180, lineD: pos.d };
+            }
+          } else if (dp) {
+            // service over: one last drive home to the depot
+            const lastIdx = Math.floor(lastDepartureCutoff / cycleEff);
+            const tHome = since - (lastIdx + 1) * cycleEff;
+            if (tHome >= 0 && tHome < deadDur) {
+              const tSec = (tHome / cong) * 60;
+              const d = kinematicDist(dp.lenM, deadMin * 60, tSec);
+              const { pt, bearing } = this.bearingAlong(
+                dp.path, dp.cum, dp.lenM, dp.lenM - d, false,
+              );
+              hit = { pt, bearing: bearing + 180, lineD: null };
+            }
+          }
+        }
+
+        if (hit) {
+          const { x, z } = this.toLocal(hit.pt);
+          mesh.position.set(x, 0, z);
+          mesh.rotation.y = Math.PI / 2 - (hit.bearing * Math.PI) / 180;
+          mesh.scale.setScalar(busScale);
+          applyBusLighting(mesh, day);
+          visible = true;
+          seenPt = hit.pt;
+          if (hit.lineD !== null) {
+            // is this bus at (or basically at) one of its stops?
+            for (let si = 0; si < line.stopDist.length; si++) {
+              if (Math.abs(hit.lineD - line.stopDist[si]) < 25) {
+                servedNow.add(line.stopIds[si]);
+                break;
               }
             }
           }

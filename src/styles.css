@@ -181,6 +181,24 @@ button.chip:hover {
   margin: 4px 5px;
 }
 
+/* two half-height stacked toggles sharing one dock slot */
+.dock-split {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  justify-content: center;
+}
+
+.dock-split button {
+  flex-direction: row;
+  gap: 5px;
+  min-width: 74px;
+  padding: 3px 9px;
+  font-size: 10.5px;
+  border-radius: 8px;
+  justify-content: flex-start;
+}
+
 .dock button.pulse {
   animation: pulse 1.6s infinite;
 }
@@ -606,6 +624,27 @@ button.chip:hover {
 .notice.bad {
   background: #c92a2a;
   color: #fff;
+}
+
+/* ---------- Talon & Grasp Savings ---------- */
+
+.loan-box {
+  border: 1px solid rgba(160, 40, 40, 0.35);
+  background: rgba(160, 40, 40, 0.07);
+  border-radius: 10px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.loan-box > b {
+  color: #a02828;
+  letter-spacing: 0.3px;
+}
+
+.loan-box .hint {
+  margin: 0;
 }
 
 /* ---------- stop upgrade list (line editor) ---------- */

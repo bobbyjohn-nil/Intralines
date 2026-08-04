@@ -6,8 +6,13 @@ import type { BusModelSpec } from './types';
 // ($95k), stops for a medium line (~10 x $4k) and a small wage buffer —
 // build one solid starter line, then earn the rest (or take the loan).
 export const START_CASH = 310_000;
+// The only lender left in town is Talon & Grasp Savings — and they know it.
+// A fat arrangement fee off the top, brutal interest forever, and the only
+// exit is buying your way out at a premium.
 export const LOAN_AMOUNT = 500_000;
-export const LOAN_WEEKLY_INTEREST = 4_000;
+export const LOAN_FEE = 50_000; // skimmed before the money arrives
+export const LOAN_WEEKLY_INTEREST = 16_000; // 3.2%/week, never amortizes
+export const LOAN_PAYOFF = 750_000; // the only way to make them go away
 
 export const DEPOT_COST = 150_000;
 export const DEPOT_UPGRADE_COST: Record<number, number> = { 2: 220_000, 3: 450_000 };

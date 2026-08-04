@@ -23,7 +23,7 @@ export const CITIES: CityMeta[] = [
     kind: 'real',
     center: [-71.8023, 42.2626],
     zoom: 12.6,
-    bbox: [-71.9, 42.2, -71.7, 42.36],
+    bbox: [-71.95, 42.16, -71.65, 42.4],
     counties: [{ state: '25', county: '027' }],
     lodesState: 'ma',
     calib: { workforceRate: 0.46, gravityBetaKm: 4.5, carSpeedKmh: 37 },
@@ -35,7 +35,7 @@ export const CITIES: CityMeta[] = [
     kind: 'real',
     center: [-93.6091, 41.5868],
     zoom: 12.4,
-    bbox: [-93.82, 41.5, -93.5, 41.68],
+    bbox: [-93.9, 41.455, -93.42, 41.725],
     counties: [
       { state: '19', county: '153' }, // Polk
       { state: '19', county: '049' }, // Dallas
@@ -51,7 +51,7 @@ export const CITIES: CityMeta[] = [
     kind: 'real',
     center: [-89.4012, 43.0731],
     zoom: 12.4,
-    bbox: [-89.56, 42.96, -89.22, 43.17],
+    bbox: [-89.645, 42.9075, -89.135, 43.2225],
     counties: [{ state: '55', county: '025' }], // Dane
     lodesState: 'wi',
     calib: { workforceRate: 0.52, gravityBetaKm: 4.5, carSpeedKmh: 37 },

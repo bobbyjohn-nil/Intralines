@@ -8,6 +8,8 @@ import {
   ensureOverlays, updateDepot, updateDraft, updateDraftCursor, updateHeatmap, updateNetwork,
 } from './overlays';
 import { BusLayer3D } from './busLayer3d';
+import type { LineExtras } from './busLayer3d';
+import { cumulativeDist } from '../game/routing';
 
 /** quick probe: can we actually reach the tile server? */
 async function tilesReachable(): Promise<boolean> {
@@ -291,22 +293,76 @@ export function MapView({ pack }: { pack: CityPack }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pack.meta.id, basemapPref]);
 
-  function lineIntersections(): Map<string, number[]> {
+  function lineExtras(): Map<string, LineExtras> {
     const st = useGame.getState();
-    const out = new Map<string, number[]>();
+    const out = new Map<string, LineExtras>();
     const g = st.graph;
-    if (!g) return out;
+    const pk = st.pack;
+    if (!g || !pk) return out;
     const keys = g.intersectionKeys();
+    const cosLat = Math.cos((pk.meta.center[1] * Math.PI) / 180);
+
+    // census density field: bucket block-group densities so corridor samples
+    // can look up how urban their surroundings are
+    const CELLD = 0.008;
+    const dgrid = new Map<string, number[]>();
+    const dens: number[] = [];
+    for (const bg of pk.blockGroups) {
+      const d = (bg.pop + bg.jobs) / Math.max(bg.areaKm2, 0.05);
+      dens.push(d);
+      const k = `${Math.floor(bg.centroid[0] / CELLD)}:${Math.floor(bg.centroid[1] / CELLD)}`;
+      (dgrid.get(k) ?? dgrid.set(k, []).get(k)!).push(d);
+    }
+    const sorted = [...dens].sort((a, b) => a - b);
+    const densNorm = sorted[Math.floor(sorted.length * 0.85)] || 1;
+    const localDensity = (pt: [number, number]): number => {
+      const gx = Math.floor(pt[0] / CELLD);
+      const gy = Math.floor(pt[1] / CELLD);
+      let best = 0;
+      for (let x = gx - 1; x <= gx + 1; x++) {
+        for (let y = gy - 1; y <= gy + 1; y++) {
+          for (const d of dgrid.get(`${x}:${y}`) ?? []) if (d > best) best = d;
+        }
+      }
+      return best;
+    };
+
     for (const l of st.lines) {
       const ds: number[] = [];
+      let urbanSum = 0;
+      let mainCnt = 0;
+      let samples = 0;
+      let lastSample = -1e9;
       for (let i = 0; i < l.path.length; i++) {
         const pnt = l.path[i];
         if (keys.has(`${Math.round(pnt[0] * 1e5)}:${Math.round(pnt[1] * 1e5)}`)) {
           const d = l.cum[i];
           if (!ds.length || d - ds[ds.length - 1] > 30) ds.push(d);
         }
+        // corridor character samples every ~250 m
+        if (l.cum[i] - lastSample >= 250 || i === 0) {
+          lastSample = l.cum[i];
+          samples++;
+          urbanSum += Math.min(localDensity(pnt) / densNorm, 1);
+          const kmh = g.speedNear(pnt, 60);
+          if (kmh !== null && kmh >= 42) mainCnt++;
+        }
       }
-      out.set(l.id, ds);
+      const extras: LineExtras = {
+        intersections: ds,
+        urban: samples ? urbanSum / samples : 0.5,
+        mainShare: samples ? mainCnt / samples : 0.5,
+      };
+      // deadhead: real street route from the depot to the first stop
+      const first = st.stops.find((x) => x.id === l.stopIds[0]);
+      if (st.depot && first) {
+        const r = g.route(st.depot.node, first.node);
+        if (r && r.path.length >= 2) {
+          const cum = cumulativeDist(r.path, cosLat);
+          extras.depotPath = { path: r.path, cum, lenM: cum[cum.length - 1] };
+        }
+      }
+      out.set(l.id, extras);
     }
     return out;
   }
@@ -320,7 +376,7 @@ export function MapView({ pack }: { pack: CityPack }) {
     updateDraft(map, st.draft);
     syncDepot();
     busLayerRef.current?.setNetwork(
-      st.lines, st.stats?.perLine ?? [], st.stops, lineIntersections(),
+      st.lines, st.stats?.perLine ?? [], st.stops, lineExtras(),
     );
   }
 
@@ -369,7 +425,7 @@ export function MapView({ pack }: { pack: CityPack }) {
   useEffect(() => {
     if (readyRef.current) {
       busLayerRef.current?.setNetwork(
-        lines, stats?.perLine ?? [], stops, lineIntersections(),
+        lines, stats?.perLine ?? [], stops, lineExtras(),
       );
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps

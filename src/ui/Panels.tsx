@@ -4,9 +4,9 @@ import {
 } from '../game/store';
 import {
   BUSES_PER_MECHANIC, BUS_MODELS, CHARGERS_COST, DEPOT_CAPACITY, DEPOT_UPGRADE_COST,
-  DRIVER_WAGE_PER_HOUR, HEADWAY_CHOICES, LOAN_AMOUNT, LOAN_WEEKLY_INTEREST,
-  MECHANIC_WAGE_PER_DAY, STOP_COST, STOP_TIER_NAMES, STOP_UPGRADE_COST, SUBSIDY_PER_RIDER,
-  WASH_BAY_COST, WORKSHOP_COST,
+  DRIVER_WAGE_PER_HOUR, HEADWAY_CHOICES, LOAN_AMOUNT, LOAN_FEE, LOAN_PAYOFF,
+  LOAN_WEEKLY_INTEREST, MECHANIC_WAGE_PER_DAY, STOP_COST, STOP_TIER_NAMES,
+  STOP_UPGRADE_COST, SUBSIDY_PER_RIDER, WASH_BAY_COST, WORKSHOP_COST,
 } from '../game/constants';
 import { fmtInt, fmtMoney } from './format';
 import type { LineStats } from '../game/types';
@@ -627,6 +627,7 @@ function FinancePanel() {
   const stats = useGame((s) => s.stats);
   const loanTaken = useGame((s) => s.loanTaken);
   const takeLoan = useGame((s) => s.takeLoan);
+  const repayLoan = useGame((s) => s.repayLoan);
   const exportSave = useGame((s) => s.exportSave);
   const importSave = useGame((s) => s.importSave);
   const notify = useGame((s) => s.notify);
@@ -660,11 +661,37 @@ function FinancePanel() {
         Fixed costs (depot upkeep, mechanics, office, loan interest) are charged on top,
         spread over the day.
       </p>
-      {!loanTaken && (
-        <button className="btn with-icon" onClick={takeLoan}>
-          <IconBank size={15} /> Take loan: +{fmtMoney(LOAN_AMOUNT)} ({fmtMoney(LOAN_WEEKLY_INTEREST)}/week interest)
-        </button>
-      )}
+      <div className="loan-box">
+        <b>Talon &amp; Grasp Savings</b>
+        {!loanTaken ? (
+          <>
+            <p className="hint">
+              The only bank that returns your calls. {fmtMoney(LOAN_AMOUNT)} minus a{' '}
+              {fmtMoney(LOAN_FEE)} &ldquo;arrangement fee&rdquo;, at{' '}
+              {fmtMoney(LOAN_WEEKLY_INTEREST)}/week — forever. The debt never shrinks;
+              they'll release you for {fmtMoney(LOAN_PAYOFF)}.
+            </p>
+            <button className="btn danger with-icon" onClick={takeLoan}>
+              <IconBank size={15} /> Sign with Talon &amp; Grasp (+{fmtMoney(LOAN_AMOUNT - LOAN_FEE)})
+            </button>
+          </>
+        ) : (
+          <>
+            <p className="hint">
+              You owe them {fmtMoney(LOAN_WEEKLY_INTEREST)} every week, in perpetuity.
+              They send a fruit basket each quarter. It is always slightly rotten.
+            </p>
+            <button
+              className="btn with-icon"
+              disabled={cash < LOAN_PAYOFF}
+              title={cash < LOAN_PAYOFF ? `Need ${fmtMoney(LOAN_PAYOFF)}` : ''}
+              onClick={repayLoan}
+            >
+              <IconBank size={15} /> Buy your freedom ({fmtMoney(LOAN_PAYOFF)})
+            </button>
+          </>
+        )}
+      </div>
       <div className="btn-row">
         <button
           className="btn with-icon"
