@@ -23,6 +23,7 @@ export const CHANGELOG: LogEntry[] = [
       'Click any demand dot to inspect it: residents, jobs (with education and tourism slices), density, and a full travel-mode breakdown with percentage bars.',
       'Ridership eases traffic: bus riders who would have driven are off the road, so corridors with strong ridership see visibly lighter rush hours (and the rush-hour indicator reflects it citywide).',
       'Opposing buses no longer drive through each other — the keep-right offset now scales with how large buses are drawn, so they visibly pass in their own lanes at any zoom.',
+      'Demand dots draw above the roads now — lightly translucent so the streets still show through, with the same rigid outline.',
     ],
   },
   {

@@ -41,35 +41,29 @@ export function ensureOverlays(map: MLMap): void {
   );
 
   if (!map.getLayer('heatmap-blob')) {
-    // crisp translucent demand dots over block-group centroids, slid
-    // underneath roads + buildings. Radius scales with demand but never
-    // shrinks below a clearly visible floor.
-    const layers = map.getStyle().layers ?? [];
-    const beforeId = layers.find(
-      (l) => l.id.startsWith('road') || l.id.startsWith('building'),
-    )?.id;
+    // crisp demand dots over block-group centroids, drawn ABOVE the basemap
+    // (roads and buildings included) but beneath the game's own line/stop
+    // overlays added after this. Fill stays lightly translucent so streets
+    // show through; the solid outline keeps the shape rigid.
     const f: ExpressionSpecification = ['+', 0.45, ['get', 'w']]; // 0.45..1.45
-    map.addLayer(
-      {
-        id: 'heatmap-blob',
-        type: 'circle',
-        source: 'heatmap-src',
-        paint: {
-          'circle-radius': [
-            'interpolate', ['exponential', 1.7], ['zoom'],
-            10, ['*', 3.5, f],
-            13, ['*', 9, f],
-            16, ['*', 24, f],
-          ],
-          'circle-color': HEAT_COLORS.pop.fill,
-          'circle-opacity': 0.34,
-          'circle-stroke-color': HEAT_COLORS.pop.stroke,
-          'circle-stroke-width': 1.4,
-          'circle-stroke-opacity': 0.85,
-        },
+    map.addLayer({
+      id: 'heatmap-blob',
+      type: 'circle',
+      source: 'heatmap-src',
+      paint: {
+        'circle-radius': [
+          'interpolate', ['exponential', 1.7], ['zoom'],
+          10, ['*', 3.5, f],
+          13, ['*', 9, f],
+          16, ['*', 24, f],
+        ],
+        'circle-color': HEAT_COLORS.pop.fill,
+        'circle-opacity': 0.3,
+        'circle-stroke-color': HEAT_COLORS.pop.stroke,
+        'circle-stroke-width': 1.6,
+        'circle-stroke-opacity': 0.95,
       },
-      beforeId,
-    );
+    });
   }
   if (!map.getLayer('lines-halo')) {
     map.addLayer({
