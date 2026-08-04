@@ -107,7 +107,7 @@ export const SPEEDS: { label: string; gameMinPerSec: number }[] = [
 ];
 
 export const SAVE_VERSION = 1;
-export const SAVE_KEY_PREFIX = 'transit-lines-save-';
+export const SAVE_KEY_PREFIX = 'intralines-save-';
 
 /**
  * Street congestion by hour of day: 1 = free flow. Buses visibly slow down,

@@ -244,7 +244,7 @@ export const useGame = create<GameState>((set, get) => {
     mapEpoch: 0,
     basemapPref:
       (typeof localStorage !== 'undefined' &&
-        (localStorage.getItem('tl-basemap') as 'auto' | 'offline')) ||
+        (localStorage.getItem('intralines-basemap') as 'auto' | 'offline')) ||
       'auto',
     basemapActive: 'offline',
     menuError: null,
@@ -417,7 +417,7 @@ export const useGame = create<GameState>((set, get) => {
     toggleBasemap: () => {
       const pref = get().basemapPref === 'auto' ? 'offline' : 'auto';
       try {
-        localStorage.setItem('tl-basemap', pref);
+        localStorage.setItem('intralines-basemap', pref);
       } catch {
         // fine
       }
