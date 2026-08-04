@@ -199,26 +199,55 @@ export function updateHeatmap(
     });
     const positive = totals.filter((t) => t > 0).sort((a, b) => a - b);
     const norm = positive[Math.floor(positive.length * 0.92)] || 1;
+    // each dot's color is a mix of the four mode colors in proportion to
+    // the trips they carry. Shares pass through a mild power curve so the
+    // minority modes tint visibly instead of drowning in car-gray.
+    const rgb = (hexColor: string): [number, number, number] => [
+      parseInt(hexColor.slice(1, 3), 16),
+      parseInt(hexColor.slice(3, 5), 16),
+      parseInt(hexColor.slice(5, 7), 16),
+    ];
+    const MODE_RGB = {
+      car: rgb(MODE_COLORS.car.fill),
+      bus: rgb(MODE_COLORS.bus.fill),
+      walk: rgb(MODE_COLORS.walk.fill),
+      bike: rgb(MODE_COLORS.bike.fill),
+    };
     const features = pack.blockGroups.flatMap((bg, i) => {
       const m = bgModes?.[i];
       const total = totals[i];
       if (!m || total < 8) return [];
-      // color by the strongest alternative to driving where it carries real
-      // weight (>= 18% of trips); gray only where the car is unchallenged.
-      // A dominant-mode map of a US city is wall-to-wall car — this shows
-      // where your buses (and feet, and bikes) are actually winning.
-      const alt = (['bus', 'walk', 'bike'] as const).reduce((a, b) =>
-        m[a] >= m[b] ? a : b,
-      );
-      const dominant = m[alt] / total >= 0.18 ? alt : 'car';
+      const keys = ['car', 'bus', 'walk', 'bike'] as const;
+      // 0.35 exponent: car's 80% majority would otherwise gray out every
+      // dot; this keeps the mix visibly tinted by the smaller modes while
+      // car-only neighborhoods still read gray
+      const weights = keys.map((k) => Math.pow(m[k] / total, 0.35));
+      const wsum = weights.reduce((s, v) => s + v, 0) || 1;
+      let r = 0;
+      let g = 0;
+      let b = 0;
+      keys.forEach((k, ki) => {
+        const c = MODE_RGB[k];
+        const w = weights[ki] / wsum;
+        r += c[0] * w;
+        g += c[1] * w;
+        b += c[2] * w;
+      });
+      // averaging four colors washes out; re-saturate the mix around its
+      // own luminance so the blended hue stays vivid (hue is unchanged)
+      const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+      const K = 3;
+      r = Math.max(0, Math.min(255, lum + (r - lum) * K));
+      g = Math.max(0, Math.min(255, lum + (g - lum) * K));
+      b = Math.max(0, Math.min(255, lum + (b - lum) * K));
       return [
         {
           type: 'Feature' as const,
           properties: {
             w: Math.pow(Math.min(total / norm, 1), 0.75),
             bg: i,
-            fill: MODE_COLORS[dominant].fill,
-            stroke: MODE_COLORS[dominant].stroke,
+            fill: `rgb(${Math.round(r)},${Math.round(g)},${Math.round(b)})`,
+            stroke: `rgb(${Math.round(r * 0.68)},${Math.round(g * 0.68)},${Math.round(b * 0.68)})`,
           },
           geometry: { type: 'Point' as const, coordinates: bg.centroid },
         },
