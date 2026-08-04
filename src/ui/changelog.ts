@@ -8,6 +8,17 @@ export interface LogEntry {
 
 export const CHANGELOG: LogEntry[] = [
   {
+    version: '0.8',
+    date: 'Aug 4, 2026',
+    title: 'Sharper demand',
+    items: [
+      'Two new demand layers: Tourism (venues, hotels, restaurants) and Education (schools, campuses) — real LODES sector data in real cities. Pick them from the new dropdown next to the Residents/Work toggles; they can overlap the other layers since campuses and hotels are workplaces too.',
+      'Work demand no longer glows across residential neighborhoods — a handful of corner-store jobs is no longer a hotspot.',
+      'The heatmap itself is tighter and translucent: defined cores around real hotspots instead of one washed-out blob.',
+      'Residents / Work toggles are bigger and clearer in the dock.',
+    ],
+  },
+  {
     version: '0.7',
     date: 'Aug 4, 2026',
     title: 'Names on the map',

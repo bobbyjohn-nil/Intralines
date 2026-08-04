@@ -381,14 +381,14 @@ export function parseAcs(rows) {
 }
 
 /** LODES csv text -> Map geoid(12 = block group) -> C000 count */
-function parseLodes(csvText, geoColumn) {
-  const out = new Map();
+function parseLodes(csvText, geoColumn, columns = ['C000']) {
+  const maps = columns.map(() => new Map());
   let pos = 0;
   const nl = csvText.indexOf('\n');
   const header = csvText.slice(0, nl).split(',');
   const iGeo = header.indexOf(geoColumn);
-  const iCount = header.indexOf('C000');
-  if (iGeo === -1 || iCount === -1) throw new Error(`bad LODES header (${geoColumn})`);
+  const idx = columns.map((c) => header.indexOf(c));
+  if (iGeo === -1 || idx[0] === -1) throw new Error(`bad LODES header (${geoColumn})`);
   pos = nl + 1;
   while (pos < csvText.length) {
     let end = csvText.indexOf('\n', pos);
@@ -398,20 +398,33 @@ function parseLodes(csvText, geoColumn) {
     if (!line) continue;
     const cells = line.split(',');
     const bg = String(cells[iGeo]).slice(0, 12);
-    const n = +cells[iCount] || 0;
-    out.set(bg, (out.get(bg) || 0) + n);
+    for (let c = 0; c < idx.length; c++) {
+      if (idx[c] === -1) continue;
+      const n = +cells[idx[c]] || 0;
+      maps[c].set(bg, (maps[c].get(bg) || 0) + n);
+    }
   }
-  return out;
+  return maps;
 }
 
-/** LODES WAC (workplaces): jobs per block group */
+/**
+ * LODES WAC (workplaces) per block group: total jobs plus two themed
+ * slices — education (NAICS 61, CNS15) and tourism (arts/entertainment +
+ * hotels/restaurants, NAICS 71+72, CNS17+CNS18).
+ */
 export function parseWac(csvText) {
-  return parseLodes(csvText, 'w_geocode');
+  const [jobs, cns15, cns17, cns18] = parseLodes(csvText, 'w_geocode', [
+    'C000', 'CNS15', 'CNS17', 'CNS18',
+  ]);
+  const tour = new Map();
+  for (const [bg, n] of cns17) tour.set(bg, n);
+  for (const [bg, n] of cns18) tour.set(bg, (tour.get(bg) || 0) + n);
+  return { jobs, edu: cns15, tour };
 }
 
 /** LODES RAC (residences): employed residents per block group */
 export function parseRac(csvText) {
-  return parseLodes(csvText, 'h_geocode');
+  return parseLodes(csvText, 'h_geocode')[0];
 }
 
 function ringCentroid(ring) {
@@ -454,7 +467,7 @@ function simplifyRing(ring, tol) {
  * When jobsByBg is null, jobs are estimated from population with a
  * center-weighted decay (clearly labeled in meta.dataSource by the caller).
  */
-export function buildBlockGroups(features, popByBg, jobsByBg, bbox, center) {
+export function buildBlockGroups(features, popByBg, jobsByBg, bbox, center, sectors) {
   const bgs = [];
   for (const f of features) {
     const geoid = f.properties.GEOID || f.properties.geoid;
@@ -476,9 +489,22 @@ export function buildBlockGroups(features, popByBg, jobsByBg, bbox, center) {
       rings.reduce((s, r) => s + ringAreaKm2(r), 0) ||
       0.05;
     if (pop <= 0 && jobs <= 0 && !jobsByBg) continue;
-    bgs.push({ id: geoid, centroid, rings, pop, jobs, areaKm2 });
+    const bg = { id: geoid, centroid, rings, pop, jobs, areaKm2 };
+    if (sectors) {
+      bg.edu = sectors.edu?.get(geoid) ?? 0;
+      bg.tour = sectors.tour?.get(geoid) ?? 0;
+    }
+    bgs.push(bg);
   }
   if (!jobsByBg) estimateJobs(bgs, center);
+  // no sector data (estimated-jobs fallback): rough national shares so the
+  // tourism/education heatmap layers aren't just empty
+  if (!sectors) {
+    for (const b of bgs) {
+      b.edu = b.edu ?? Math.round(b.jobs * 0.09);
+      b.tour = b.tour ?? Math.round(b.jobs * 0.1);
+    }
+  }
   // drop fully-empty cells
   return bgs.filter((b) => b.pop > 0 || b.jobs > 0);
 }

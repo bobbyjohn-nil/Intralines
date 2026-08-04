@@ -5,7 +5,7 @@
 const DB_NAME = 'intralines';
 const OLD_DB_NAME = 'transit-lines';
 const STORE = 'cityPacks';
-export const PACK_FORMAT_VERSION = 5; // v5: enlarged city extents
+export const PACK_FORMAT_VERSION = 6; // v6: tourism/education demand slices
 
 function open(name: string): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {

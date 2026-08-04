@@ -178,10 +178,18 @@ const BBOX = [-71.9, 42.2, -71.7, 42.36];
   assert.equal(pop.get('250277301002'), 567);
 
   const wac = parseWac(
-    'w_geocode,C000,CA01\n250277301001001,10,5\n250277301001002,7,2\n250277301002001,3,1\n',
+    'w_geocode,C000,CNS15,CNS17,CNS18\n' +
+      '250277301001001,10,4,1,2\n250277301001002,7,0,1,1\n250277301002001,3,3,0,0\n',
   );
-  assert.equal(wac.get('250277301001'), 17, 'blocks aggregate to block group');
-  assert.equal(wac.get('250277301002'), 3);
+  assert.equal(wac.jobs.get('250277301001'), 17, 'blocks aggregate to block group');
+  assert.equal(wac.jobs.get('250277301002'), 3);
+  assert.equal(wac.edu.get('250277301001'), 4, 'CNS15 is the education slice');
+  assert.equal(wac.edu.get('250277301002'), 3);
+  assert.equal(wac.tour.get('250277301001'), 5, 'tourism = arts (CNS17) + hotels/food (CNS18)');
+
+  const wacOld = parseWac('w_geocode,C000\n250277301001001,10\n');
+  assert.equal(wacOld.jobs.get('250277301001'), 10, 'sector columns optional');
+  assert.equal(wacOld.edu.get('250277301001'), undefined);
 
   const rac = parseRac(
     'h_geocode,C000,CA01\n250277301001001,20,5\n250277301001005,5,2\n',

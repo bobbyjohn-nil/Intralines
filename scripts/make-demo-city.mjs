@@ -197,8 +197,21 @@ for (let cx = -CH; cx < CH; cx++) {
       700 * Math.exp(-dMall / 350) +
       520 * Math.exp(-dEast / 450) +
       380 * Math.exp(-dWest / 420) +
-      pop * 0.06;
+      pop * 0.012;
     jobs *= 0.7 + rnd() * 0.6;
+
+    // themed demand slices (heatmap layers): campuses/schools + attractions
+    let edu =
+      2400 * Math.exp(-dUni / 380) +
+      pop * 0.02; // neighborhood schools follow the people
+    edu *= 0.75 + rnd() * 0.5;
+    let tour =
+      1700 * Math.exp(-dDowntown / 450) +
+      850 * Math.exp(-dMall / 300) +
+      450 * Math.exp(-dUni / 350) +
+      650 * Math.exp(-dEast / 480);
+    if (Math.abs(cxm) < 900 && Math.abs(cym) < 2400) tour += 500; // riverfront strip
+    tour *= 0.7 + rnd() * 0.6;
 
     if (pop < 60 && jobs < 60) continue;
     const ring = [P(x0, y0), P(x0 + CELL, y0), P(x0 + CELL, y0 + CELL), P(x0, y0 + CELL)];
@@ -208,6 +221,8 @@ for (let cx = -CH; cx < CH; cx++) {
       rings: [ring],
       pop,
       jobs,
+      edu: Math.round(edu * 0.16),
+      tour: Math.round(tour * 0.16),
       areaKm2: 0.16,
     });
   }

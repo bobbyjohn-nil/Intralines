@@ -9,23 +9,46 @@ const EMPTY = { type: 'FeatureCollection', features: [] } as GeoJSON.FeatureColl
 
 import type { ExpressionSpecification } from 'maplibre-gl';
 
-/** color ramps for the demand heatmap (purple = residents, teal = jobs) */
-const HEAT_COLORS: Record<'pop' | 'jobs', ExpressionSpecification> = {
+export type HeatMode = 'pop' | 'jobs' | 'tour' | 'edu';
+
+/**
+ * Color ramps for the demand heatmap. Deliberately translucent (nothing
+ * above ~0.5 alpha) with a hole below 0.18 density and steep mid stops, so
+ * hotspots read as defined cores instead of one washed-out blob.
+ * purple = residents, teal = jobs, amber = tourism, blue = education.
+ */
+const HEAT_COLORS: Record<HeatMode, ExpressionSpecification> = {
   pop: [
     'interpolate', ['linear'], ['heatmap-density'],
     0, 'rgba(122,88,224,0)',
-    0.12, 'rgba(139,106,232,0.22)',
-    0.35, 'rgba(122,84,224,0.45)',
-    0.65, 'rgba(103,63,211,0.62)',
-    1, 'rgba(82,44,180,0.78)',
+    0.18, 'rgba(139,106,232,0.05)',
+    0.4, 'rgba(122,84,224,0.28)',
+    0.7, 'rgba(103,63,211,0.42)',
+    1, 'rgba(82,44,180,0.52)',
   ],
   jobs: [
     'interpolate', ['linear'], ['heatmap-density'],
     0, 'rgba(16,128,148,0)',
-    0.12, 'rgba(22,148,168,0.22)',
-    0.35, 'rgba(16,128,150,0.46)',
-    0.65, 'rgba(12,106,128,0.64)',
-    1, 'rgba(8,84,104,0.8)',
+    0.18, 'rgba(22,148,168,0.05)',
+    0.4, 'rgba(16,128,150,0.28)',
+    0.7, 'rgba(12,106,128,0.44)',
+    1, 'rgba(8,84,104,0.54)',
+  ],
+  tour: [
+    'interpolate', ['linear'], ['heatmap-density'],
+    0, 'rgba(224,123,57,0)',
+    0.18, 'rgba(228,138,74,0.05)',
+    0.4, 'rgba(219,116,44,0.28)',
+    0.7, 'rgba(198,94,26,0.44)',
+    1, 'rgba(168,72,14,0.54)',
+  ],
+  edu: [
+    'interpolate', ['linear'], ['heatmap-density'],
+    0, 'rgba(47,111,208,0)',
+    0.18, 'rgba(72,130,216,0.05)',
+    0.4, 'rgba(47,111,208,0.28)',
+    0.7, 'rgba(30,88,180,0.44)',
+    1, 'rgba(18,64,142,0.54)',
   ],
 };
 
@@ -52,12 +75,14 @@ export function ensureOverlays(map: MLMap): void {
         paint: {
           'heatmap-weight': ['get', 'w'],
           'heatmap-intensity': [
-            'interpolate', ['linear'], ['zoom'], 10, 1.3, 13, 2.2, 16, 3.2,
+            'interpolate', ['linear'], ['zoom'], 10, 1.5, 13, 2.5, 16, 3.4,
           ],
+          // tighter radius: defined cores around real hotspots, not one
+          // city-wide wash
           'heatmap-radius': [
-            'interpolate', ['exponential', 1.6], ['zoom'], 10, 16, 12, 34, 14, 70, 16, 150,
+            'interpolate', ['exponential', 1.6], ['zoom'], 10, 12, 12, 26, 14, 52, 16, 100,
           ],
-          'heatmap-opacity': 0.85,
+          'heatmap-opacity': 0.62,
           'heatmap-color': HEAT_COLORS.pop,
         },
       },
@@ -176,28 +201,32 @@ function setData(map: MLMap, id: string, data: GeoJSON.FeatureCollection): void 
 export function updateHeatmap(
   map: MLMap,
   pack: CityPack,
-  mode: 'off' | 'pop' | 'jobs',
+  mode: 'off' | HeatMode,
 ): void {
   if (mode === 'off') {
     setData(map, 'heatmap-src', EMPTY);
     return;
   }
-  const dens = pack.blockGroups.map((bg) =>
-    (mode === 'pop' ? bg.pop : bg.jobs) / Math.max(bg.areaKm2, 0.02),
-  );
-  const sorted = [...dens].sort((a, b) => a - b);
-  const p85 = sorted[Math.floor(sorted.length * 0.85)] || 1;
-  // sqrt + floor so small demand pockets still read on the map instead of
-  // vanishing next to downtown's hotspots
-  const features = pack.blockGroups.map((bg, i) => ({
-    type: 'Feature' as const,
-    properties: {
-      w: dens[i] > 0
-        ? Math.min(0.22 + 0.78 * Math.sqrt(Math.min(dens[i] / p85, 1)), 1)
-        : 0,
-    },
-    geometry: { type: 'Point' as const, coordinates: bg.centroid },
-  }));
+  const value = (bg: CityPack['blockGroups'][number]): number =>
+    mode === 'pop' ? bg.pop
+    : mode === 'jobs' ? bg.jobs
+    : mode === 'tour' ? bg.tour ?? 0
+    : bg.edu ?? 0;
+  const dens = pack.blockGroups.map((bg) => value(bg) / Math.max(bg.areaKm2, 0.02));
+  const positive = dens.filter((d) => d > 0).sort((a, b) => a - b);
+  const norm = positive[Math.floor(positive.length * 0.92)] || 1;
+  // people live everywhere, so the residents layer keeps a low floor; the
+  // workplace-style layers cut harder so scattered corner-store jobs don't
+  // paint whole residential neighborhoods as work demand
+  const cut = mode === 'pop' ? 0.06 : 0.16;
+  const features = pack.blockGroups.map((bg, i) => {
+    const rel = dens[i] / norm;
+    return {
+      type: 'Feature' as const,
+      properties: { w: rel < cut ? 0 : Math.pow(Math.min(rel, 1), 0.75) },
+      geometry: { type: 'Point' as const, coordinates: bg.centroid },
+    };
+  });
   if (map.getLayer('heatmap-blob')) {
     map.setPaintProperty('heatmap-blob', 'heatmap-color', HEAT_COLORS[mode]);
   }

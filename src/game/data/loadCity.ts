@@ -64,10 +64,10 @@ export async function loadCity(meta: CityMeta, progress: ProgressFn): Promise<Ci
   }
 
   progress(`Downloading ${meta.name}…`, 'workplaces (LEHD LODES)');
-  let jobsByBg: Map<string, number> | null = null;
+  let wac: ReturnType<typeof parseWac> | null = null;
   let jobsNote = `US Census (${popSource}) + LEHD LODES + OpenStreetMap`;
   try {
-    jobsByBg = await fetchLodesJobs(meta);
+    wac = await fetchLodesJobs(meta);
   } catch {
     jobsNote = `US Census (${popSource}) + OpenStreetMap (job locations estimated — LODES unavailable in browser)`;
   }
@@ -90,7 +90,10 @@ export async function loadCity(meta: CityMeta, progress: ProgressFn): Promise<Ci
   }
 
   progress(`Building ${meta.name}…`, 'assembling city pack');
-  const blockGroups = buildBlockGroups(features, popByBg, jobsByBg, meta.bbox, meta.center);
+  const blockGroups = buildBlockGroups(
+    features, popByBg, wac ? wac.jobs : null, meta.bbox, meta.center,
+    wac ? { edu: wac.edu, tour: wac.tour } : undefined,
+  );
   const graph = buildRoadGraph(overpass, meta.bbox);
   if (blockGroups.length < 10) {
     throw new Error('Census data came back empty — try again, or use npm run bake.');
@@ -344,7 +347,7 @@ async function fetchLodesCsv(meta: CityMeta, kind: 'wac' | 'rac'): Promise<strin
   throw lastErr ?? new Error('LODES unavailable');
 }
 
-async function fetchLodesJobs(meta: CityMeta): Promise<Map<string, number>> {
+async function fetchLodesJobs(meta: CityMeta): Promise<ReturnType<typeof parseWac>> {
   return parseWac(await fetchLodesCsv(meta, 'wac'));
 }
 

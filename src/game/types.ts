@@ -37,6 +37,10 @@ export interface BlockGroup {
   pop: number;
   jobs: number;
   areaKm2: number;
+  /** education jobs (schools, campuses) — subset of jobs */
+  edu?: number;
+  /** tourism jobs (venues, hotels, restaurants) — subset of jobs */
+  tour?: number;
 }
 
 export interface RoadEdge {

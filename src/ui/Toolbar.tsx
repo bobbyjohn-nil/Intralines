@@ -1,9 +1,81 @@
+import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useGame } from '../game/store';
 import type { Panel } from '../game/store';
 import {
-  IconBus, IconChart, IconDepot, IconHelp, IconMapFold,
+  IconBus, IconChart, IconDepot, IconHeat, IconHelp, IconMapFold,
   IconPeople, IconPlus, IconPointer, IconRoute,
 } from './icons';
+
+/** dropdown for the extra demand layers (tourism, education) */
+function HeatDropdown({
+  heatmap,
+  setHeatmap,
+}: {
+  heatmap: 'off' | 'pop' | 'jobs' | 'tour' | 'edu';
+  setHeatmap: (h: 'off' | 'pop' | 'jobs' | 'tour' | 'edu') => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const boxRef = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const active = heatmap === 'tour' || heatmap === 'edu';
+
+  useEffect(() => {
+    if (!open) return;
+    const close = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (!boxRef.current?.contains(t) && !menuRef.current?.contains(t)) setOpen(false);
+    };
+    window.addEventListener('mousedown', close);
+    return () => window.removeEventListener('mousedown', close);
+  }, [open]);
+
+  const pick = (h: 'tour' | 'edu') => {
+    setHeatmap(heatmap === h ? 'off' : h);
+    setOpen(false);
+  };
+
+  return (
+    <div className="heat-more" ref={boxRef}>
+      <button
+        className={active ? 'on' : ''}
+        onClick={() => setOpen((o) => !o)}
+        title="More demand layers: tourism, education"
+      >
+        <IconHeat />
+        <span>
+          {heatmap === 'tour' ? 'Tourism' : heatmap === 'edu' ? 'Education' : 'More'} ▾
+        </span>
+      </button>
+      {open &&
+        createPortal(
+          // portal: the dock is a transformed overflow container, so the
+          // popup must live outside it to escape clipping
+          <div className="heat-menu" ref={menuRef}>
+            <button
+              className={heatmap === 'tour' ? 'on' : ''}
+              onClick={() => pick('tour')}
+            >
+              Tourism demand
+              <small>venues, hotels, restaurants</small>
+            </button>
+            <button
+              className={heatmap === 'edu' ? 'on' : ''}
+              onClick={() => pick('edu')}
+            >
+              Educational demand
+              <small>schools and campuses</small>
+            </button>
+            <p className="heat-note">
+              These layers can overlap the residents and work demand — campuses,
+              hotels and venues are workplaces too.
+            </p>
+          </div>,
+          document.body,
+        )}
+    </div>
+  );
+}
 
 /** the horizontal command dock along the bottom of the screen */
 export function Toolbar() {
@@ -52,18 +124,19 @@ export function Toolbar() {
           onClick={() => setHeatmap(heatmap === 'pop' ? 'off' : 'pop')}
           title="Toggle the residents demand heatmap"
         >
-          <IconPeople size={13} />
-          <span>People</span>
+          <IconPeople size={15} />
+          <span>Residents</span>
         </button>
         <button
           className={heatmap === 'jobs' ? 'on' : ''}
           onClick={() => setHeatmap(heatmap === 'jobs' ? 'off' : 'jobs')}
-          title="Toggle the jobs demand heatmap"
+          title="Toggle the work demand heatmap"
         >
-          <IconChart size={13} />
-          <span>Jobs</span>
+          <IconChart size={15} />
+          <span>Work</span>
         </button>
       </div>
+      <HeatDropdown heatmap={heatmap} setHeatmap={setHeatmap} />
       <button
         className={panel === 'map-options' ? 'on' : ''}
         onClick={() => togglePanel('map-options')}

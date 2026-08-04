@@ -13,7 +13,11 @@ export declare function buildRoadGraph(
   bbox: [number, number, number, number],
 ): { nodes: LngLat[]; edges: RoadEdge[] };
 export declare function parseAcs(rows: string[][]): Map<string, number>;
-export declare function parseWac(csvText: string): Map<string, number>;
+export declare function parseWac(csvText: string): {
+  jobs: Map<string, number>;
+  edu: Map<string, number>;
+  tour: Map<string, number>;
+};
 export declare function parseRac(csvText: string): Map<string, number>;
 export declare function buildBlockGroups(
   features: GeoJSON.Feature[],
@@ -21,5 +25,6 @@ export declare function buildBlockGroups(
   jobsByBg: Map<string, number> | null,
   bbox: [number, number, number, number],
   center: LngLat,
+  sectors?: { edu: Map<string, number>; tour: Map<string, number> },
 ): BlockGroup[];
 export declare function estimateJobs(bgs: BlockGroup[], center: LngLat): void;

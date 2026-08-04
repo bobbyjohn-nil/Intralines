@@ -215,9 +215,9 @@ async function fetchJobs(meta) {
       const text = await fetchLodesGz(
         `https://lehd.ces.census.gov/data/lodes/LODES8/${meta.lodesState}/wac/${meta.lodesState}_wac_S000_JT00_${year}.csv.gz`,
       );
-      const map = parseWac(text);
-      console.log(`  LODES WAC ${year}: ${map.size} block groups with jobs`);
-      return map;
+      const wac = parseWac(text);
+      console.log(`  LODES WAC ${year}: ${wac.jobs.size} block groups with jobs`);
+      return wac;
     } catch (e) {
       console.warn(`  LODES WAC ${year} failed: ${e.message}`);
     }
@@ -266,10 +266,10 @@ async function bake(id, force) {
   const layerId = await blockGroupLayerId();
   const features = await fetchGeometries(meta, layerId);
   const { pop, source: popSource } = await fetchPop(meta);
-  let jobs = null;
+  let wac = null;
   let source = `US Census (${popSource}) + LEHD LODES + OpenStreetMap`;
   try {
-    jobs = await fetchJobs(meta);
+    wac = await fetchJobs(meta);
   } catch {
     source = `US Census (${popSource}) + OpenStreetMap (job locations estimated)`;
     console.warn('  falling back to estimated job locations');
@@ -281,7 +281,10 @@ async function bake(id, force) {
   } catch (e) {
     console.warn(`  water/parks fetch failed (cosmetic only): ${e.message}`);
   }
-  const blockGroups = buildBlockGroups(features, pop, jobs, meta.bbox, meta.center);
+  const blockGroups = buildBlockGroups(
+    features, pop, wac ? wac.jobs : null, meta.bbox, meta.center,
+    wac ? { edu: wac.edu, tour: wac.tour } : undefined,
+  );
   const graph = buildRoadGraph(roadsJson, meta.bbox);
   const pack = {
     meta: { ...meta, dataSource: source },
