@@ -1,4 +1,11 @@
-/** release notes shown on the home screen's Changelog tab (newest first) */
+/**
+ * Release notes shown on the home screen's Changelog tab (newest first).
+ *
+ * Versioning convention: ONE entry per working session, added when the
+ * session's changes ship. Bump the version, date it, give the session a
+ * short title and summarize everything that landed. The newest entry's
+ * version is displayed as the game version on the home screen.
+ */
 export interface LogEntry {
   version: string;
   date: string;
@@ -12,96 +19,55 @@ export const CHANGELOG: LogEntry[] = [
     date: 'Aug 4, 2026',
     title: 'Route surgery',
     items: [
-      'Routes are editable after creation: open a line and hit "Edit route" — click the map to add stops (inserted where they fit best, $4k for brand-new ones, free to reuse existing stops).',
-      'Every stop in the route editor is listed in order by its street name, with Move (click the map to relocate it) and Remove buttons alongside the upgrade.',
-      'Moved stops pick up their new street name and every line through them reroutes; stops no line uses anymore are demolished for half their investment back.',
-    ],
-  },
-  {
-    version: '0.9',
-    date: 'Aug 4, 2026',
-    title: 'Glued to the road',
-    items: [
-      'Buses sit exactly on their line everywhere on the map — positions now use true map projection instead of a flat-earth shortcut that drifted a few meters near the city edges.',
-      'No more teleporting: schedules run on a traffic-adjusted clock, so when rush hour ramps up buses smoothly slow down instead of snapping to a rescaled timetable.',
-      'Routes stop cutting through alleys and parking aprons — very slow minor ways now cost what they deserve.',
-    ],
-  },
-  {
-    version: '0.8',
-    date: 'Aug 4, 2026',
-    title: 'Sharper demand',
-    items: [
-      'Two new demand layers: Tourism (venues, hotels, restaurants) and Education (schools, campuses) — real LODES sector data in real cities. Pick them from the new dropdown next to the Residents/Work toggles; they can overlap the other layers since campuses and hotels are workplaces too.',
-      'Work demand no longer glows across residential neighborhoods — a handful of corner-store jobs is no longer a hotspot.',
-      'The heatmap itself is tighter and translucent: defined cores around real hotspots instead of one washed-out blob.',
-      'Residents / Work toggles are bigger and clearer in the dock.',
-    ],
-  },
-  {
-    version: '0.7',
-    date: 'Aug 4, 2026',
-    title: 'Names on the map',
-    items: [
-      'Station name labels on the map: zoom right in to see them, or flip them on everywhere from the new Map options menu in the dock.',
-      'Map options menu collects the basemap Auto / Offline switch too.',
-      'Home screen reworked into drill-in pages with big menu strips (Play, Saves, Settings, Changelog).',
-      'Fixed spare buses doing a pointless depot round-trip after the service window closed.',
-    ],
-  },
-  {
-    version: '0.6',
-    date: 'Aug 4, 2026',
-    title: 'Vultures & deadheads',
-    items: [
-      'Loans got predatory: Talon & Grasp Savings skims a $50k fee, charges $16k a week forever, and only lets you go for $750k.',
-      'Buses now drive from the depot to their first stop before service starts, and drive home after the last run — no more teleporting.',
-      'Traffic knows where it is: downtown main roads grind to a near-standstill at rush hour while country lanes stay clear all day.',
-      'Bigger maps — the demo city grew to ~14 km with two satellite towns, and all three real cities cover ~25% more area per side.',
-      'Small pockets of demand now show up on the heatmap, and People / Jobs are separate half-size toggles in the dock.',
+      'Routes are editable after creation: open a line and hit "Edit route" — click the map to add stops ($4k for brand-new ones, free to reuse existing), and every stop is listed in order by street name with Move (click the map to relocate) and Remove buttons. Orphaned stops are demolished for half their investment back.',
+      'Buses are glued to the road: positions use true map projection (they used to drift a few meters off their line near the city edges), and schedules run on a traffic-adjusted clock so rush hour slows buses smoothly instead of teleporting them.',
+      'Two new demand layers with real data: Tourism (venues, hotels, restaurants) and Education (schools, campuses), picked from a dropdown next to the bigger Residents/Work toggles — with a note that they can overlap the other layers.',
+      'Work demand no longer glows across residential neighborhoods, and the heatmap is tighter and translucent: defined cores, not one washed-out blob.',
+      'Routes stop cutting through alleys and parking aprons.',
     ],
   },
   {
     version: '0.5',
     date: 'Aug 4, 2026',
-    title: 'Stations & streets',
+    title: 'A proper front door',
     items: [
-      'Stops are infrastructure: $4k to build, upgradeable to a Shelter ($12k) or full Station ($35k) that pulls riders from further out.',
-      'Starting cash rebalanced to $310k — a depot, one Sparrow minibus and a medium line, then you earn the rest.',
-      'Fixed routes that looped around a whole block: near-miss street junctions are now healed in the map data.',
-      'Routing tuned so a faster road is worth a modest detour, never a lap around the neighborhood.',
+      'Home screen rebuilt Subway Builder-style: big menu strips you tab into — Play, Saves, Settings and Changelog — with the credits pinned to the bottom.',
+      'Saves page lists every company with its in-game clock, cash and fleet, plus per-save continue / export / delete and save-file import.',
+      'Settings collects the basemap preference, per-city downloaded-data management and a full reset.',
+      'Station names appear on the map when zoomed right in, or everywhere via the new Map options menu in the dock.',
     ],
   },
   {
     version: '0.4',
     date: 'Aug 4, 2026',
-    title: 'Realism pass',
+    title: 'A tougher city',
     items: [
-      'Buses come to a full stop only at real intersections; in traffic they visibly slow instead of freezing mid-block.',
-      'Waiting passengers show as filling ring gauges at each stop.',
-      'Stops are named after their streets ("Oak St & 3rd Ave"), and stops within a short walk act as one transfer station.',
-      'Roads darken to asphalt tones at night; more defined map with road tiers, centerlines and height-tinted buildings.',
-      'Routes are planned by travel time on real speed limits, with turn penalties.',
+      'Loans got predatory: Talon & Grasp Savings skims a $50k fee, charges $16k a week forever, and only lets you go for $750k.',
+      'Buses drive from the depot to their first stop before service and drive home after the last run — no more teleporting into service.',
+      'Traffic knows where it is: downtown main roads near-standstill at rush hour, country lanes clear all day.',
+      'Bigger maps: the demo city grew to ~14 km with two satellite towns; all three real cities cover ~25% more area.',
+      'Stops cost money ($4k) and upgrade into Shelters and Stations that pull riders from further out; starting cash rebalanced to $310k — one depot, one Sparrow, one medium line.',
     ],
   },
   {
     version: '0.3',
-    date: 'Aug 3, 2026',
-    title: 'Living city',
+    date: 'Aug 4, 2026',
+    title: 'Realism pass',
     items: [
-      'Passengers walk from their doorsteps to the stop and linger until their bus actually pulls in.',
-      'Real acceleration and braking, rush-hour congestion, red lights, night windows and headlights.',
-      'UI overhaul: labeled bottom dock, proper icons instead of emoji, toggleable smooth-area heatmap.',
+      'Buses stop fully only at real intersections; in traffic they slow down instead of freezing mid-block, with real acceleration everywhere.',
+      'Waiting passengers show as filling ring gauges; stops are named after their streets; nearby stops act as one transfer station.',
+      'Roads darken at night; more defined map with road tiers, centerlines and height-tinted buildings.',
+      'Routes are planned by travel time with turn penalties, near-miss junctions heal, and block-loop detours are gone.',
     ],
   },
   {
     version: '0.2',
     date: 'Aug 3, 2026',
-    title: 'Real cities, anywhere',
+    title: 'Living city',
     items: [
-      'Worcester, Des Moines and Madison playable on real census and street data, pre-baked for fast loads.',
-      'Full offline mode with a built-in basemap — the game never needs to be online.',
-      'Hosted on the web, and renamed to Intralines Bus Simulator.',
+      'Passengers walk from their doorsteps, linger at the stop and board when the bus actually pulls in; buses accelerate, brake, queue at lights and get stuck in rush-hour traffic.',
+      'Night comes with glowing windows and headlights.',
+      'UI overhaul: labeled bottom dock, proper icons instead of emoji, toggleable smooth-area demand heatmap.',
     ],
   },
   {
@@ -109,8 +75,9 @@ export const CHANGELOG: LogEntry[] = [
     date: 'Aug 3, 2026',
     title: 'First departure',
     items: [
-      'Depot, fleet, staff and finances; line editor that snaps to real streets.',
-      'Census-driven ridership model (gravity + bus-vs-car choice) and 3D animated buses on a colorful, tiltable map.',
+      'Depot, fleet, staff and finances; line editor that snaps to real streets; census-driven ridership model and 3D animated buses on a colorful, tiltable map.',
+      'Worcester, Des Moines and Madison playable on real census + street data, with full offline mode and web hosting.',
+      'Named Intralines Bus Simulator.',
     ],
   },
 ];
