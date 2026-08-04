@@ -15,6 +15,15 @@ export interface LogEntry {
 
 export const CHANGELOG: LogEntry[] = [
   {
+    version: '1.4',
+    date: 'Aug 4, 2026',
+    title: 'City limits',
+    items: [
+      'The world beyond your city is greyed out with a dashed boundary around the playable area — no more wandering across an endless unplayable map in online mode, and the camera stays near the city.',
+      'The demo city grew real streets out to its full census extent, so Eastville and Weston are actually reachable by road now.',
+    ],
+  },
+  {
     version: '1.3',
     date: 'Aug 4, 2026',
     title: 'Who rides, who drives',

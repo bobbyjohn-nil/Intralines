@@ -12,7 +12,7 @@ export const CITIES: CityMeta[] = [
     kind: 'demo',
     center: [-100.0, 41.5],
     zoom: 12.9,
-    bbox: [-100.09, 41.435, -99.91, 41.565],
+    bbox: [-100.072, 41.4457, -99.928, 41.5543],
     calib: { workforceRate: 0.47, gravityBetaKm: 3.2, carSpeedKmh: 34 },
     dataSource: 'Procedurally generated demonstration data',
   },

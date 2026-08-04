@@ -32,6 +32,73 @@ const HEAT_COLORS: Record<Exclude<HeatMode, 'modes'>, { fill: string; stroke: st
   edu: { fill: '#2f6fd0', stroke: '#1a4b9e' },
 };
 
+/**
+ * Grey out everything beyond the playable city and draw its boundary.
+ * The mask is a world-sized polygon with the city bbox as a hole, added
+ * after the basemap's own layers (so it covers roads and 3D buildings out
+ * there) and before the game overlays (so lines/stops/dots stay on top).
+ */
+export function addBoundaryMask(
+  map: MLMap,
+  bbox: [number, number, number, number],
+): void {
+  const [w, s, e, n] = bbox;
+  const ring: [number, number][] = [[w, s], [e, s], [e, n], [w, n], [w, s]];
+  // four opaque panels around the bbox (a world-sized polygon with a hole
+  // tessellates unreliably); 4 degrees of skirt is far beyond the camera
+  // leash, so the grey always reaches the horizon
+  const M = 4;
+  const rect = (x1: number, y1: number, x2: number, y2: number) => ({
+    type: 'Feature' as const,
+    properties: { kind: 'mask' },
+    geometry: {
+      type: 'Polygon' as const,
+      coordinates: [[[x1, y1], [x2, y1], [x2, y2], [x1, y2], [x1, y1]]],
+    },
+  });
+  if (!map.getSource('boundary-src')) {
+    map.addSource('boundary-src', {
+      type: 'geojson',
+      data: {
+        type: 'FeatureCollection',
+        features: [
+          rect(w - M, n, e + M, n + M), // north
+          rect(w - M, s - M, e + M, s), // south
+          rect(w - M, s, w, n), // west
+          rect(e, s, e + M, n), // east
+          {
+            type: 'Feature',
+            properties: { kind: 'edge' },
+            geometry: { type: 'LineString', coordinates: ring },
+          },
+        ],
+      },
+    });
+  }
+  if (!map.getLayer('boundary-mask')) {
+    map.addLayer({
+      id: 'boundary-mask',
+      type: 'fill',
+      source: 'boundary-src',
+      filter: ['==', ['get', 'kind'], 'mask'],
+      paint: { 'fill-color': '#75746e', 'fill-opacity': 0.62 },
+    });
+    map.addLayer({
+      id: 'boundary-edge',
+      type: 'line',
+      source: 'boundary-src',
+      filter: ['==', ['get', 'kind'], 'edge'],
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: {
+        'line-color': '#3c3728',
+        'line-width': ['interpolate', ['linear'], ['zoom'], 10, 1.6, 16, 4],
+        'line-dasharray': [2.5, 2],
+        'line-opacity': 0.75,
+      },
+    });
+  }
+}
+
 export function ensureOverlays(map: MLMap): void {
   const addSrc = (id: string) => {
     if (!map.getSource(id)) map.addSource(id, { type: 'geojson', data: EMPTY });

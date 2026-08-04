@@ -32,7 +32,7 @@ const round6 = (v) => Math.round(v * 1e6) / 1e6;
 // ---------------------------------------------------------------------------
 // Road grid: 200m blocks downtown, 400m in suburbs. x,y in meters, origin center.
 const BLOCK = 200;
-const HALF = 18; // grid half-extent in blocks => city ~14.4km wide
+const HALF = 27; // grid half-extent in blocks => streets out to ±5.4 km
 const nodes = [];
 const nodeIdx = new Map(); // "gx:gy" -> index
 const edges = [];
@@ -286,7 +286,7 @@ const parks = [
   [P(1300, 900), P(1800, 900), P(1800, 1400), P(1300, 1400)],
 ];
 
-const extent = HALF * BLOCK + 600;
+const extent = HALF * BLOCK + 600; // bbox reaches just past the last street
 const pack = {
   meta: {
     id: 'demo',

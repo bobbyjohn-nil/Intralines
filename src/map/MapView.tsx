@@ -5,8 +5,8 @@ import type { CityPack } from '../game/types';
 import { useGame } from '../game/store';
 import { buildPackStyle, buildRealStyle, PALETTE } from './basemapStyle';
 import {
-  ensureOverlays, MODE_COLORS, updateDepot, updateDraft, updateDraftCursor, updateHeatmap,
-  updateNetwork,
+  addBoundaryMask, ensureOverlays, MODE_COLORS, updateDepot, updateDraft, updateDraftCursor,
+  updateHeatmap, updateNetwork,
 } from './overlays';
 import { BusLayer3D } from './busLayer3d';
 import type { LineExtras } from './busLayer3d';
@@ -69,7 +69,9 @@ export function MapView({ pack }: { pack: CityPack }) {
       const style: StyleSpecification = online ? buildRealStyle() : buildPackStyle(pack);
 
       const [w, s, e, n] = pack.meta.bbox;
-      const pad = 0.35;
+      // small leash: enough to see the boundary and tilted horizon, not
+      // enough to wander off into the unplayable world
+      const pad = 0.08;
       map = new maplibregl.Map({
         container: divRef.current,
         style,
@@ -117,6 +119,7 @@ export function MapView({ pack }: { pack: CityPack }) {
 
       map.on('load', () => {
         if (!map) return;
+        addBoundaryMask(map, pack.meta.bbox);
         ensureOverlays(map);
         map.addLayer(busLayer);
         readyRef.current = true;
