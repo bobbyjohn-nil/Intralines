@@ -4,7 +4,7 @@ import {
 } from '../game/store';
 import {
   BUSES_PER_MECHANIC, BUS_MODELS, CHARGERS_COST, DEPOT_CAPACITY, DEPOT_COST,
-  DEPOT_UPGRADE_COST,
+  DEPOT_UPGRADE_COST, MAX_DEPOTS,
   DRIVER_WAGE_PER_HOUR, HEADWAY_CHOICES, LOAN_AMOUNT, LOAN_FEE, LOAN_PAYOFF,
   LOAN_WEEKLY_INTEREST, MECHANIC_WAGE_PER_DAY, STOP_COST, STOP_TIER_NAMES,
   STOP_UPGRADE_COST, SUBSIDY_PER_RIDER, WASH_BAY_COST, WORKSHOP_COST,
@@ -731,21 +731,27 @@ function DepotPanel() {
           );
         })}
       </div>
-      <button
-        className={`btn with-icon ${tool === 'depot-place' ? 'primary' : ''}`}
-        disabled={cash < DEPOT_COST}
-        title={
-          cash < DEPOT_COST
-            ? `Need ${fmtMoney(DEPOT_COST)} — you're ${fmtMoney(DEPOT_COST - cash)} short.`
-            : 'Then click the map where the new depot should go'
-        }
-        onClick={() => setTool('depot-place')}
-      >
-        <IconDepot size={15} />{' '}
-        {tool === 'depot-place'
-          ? 'Click the map to place it…'
-          : `Build another depot (${fmtMoney(DEPOT_COST)})`}
-      </button>
+      {depots.length >= MAX_DEPOTS ? (
+        <p className="hint">
+          City planning caps you at {MAX_DEPOTS} depots — upgrade one for more parking.
+        </p>
+      ) : (
+        <button
+          className={`btn with-icon ${tool === 'depot-place' ? 'primary' : ''}`}
+          disabled={cash < DEPOT_COST}
+          title={
+            cash < DEPOT_COST
+              ? `Need ${fmtMoney(DEPOT_COST)} — you're ${fmtMoney(DEPOT_COST - cash)} short.`
+              : 'Then click the map where the new depot should go'
+          }
+          onClick={() => setTool('depot-place')}
+        >
+          <IconDepot size={15} />{' '}
+          {tool === 'depot-place'
+            ? 'Click the map to place it…'
+            : `Build another depot (${fmtMoney(DEPOT_COST)})`}
+        </button>
+      )}
     </>
   );
 }

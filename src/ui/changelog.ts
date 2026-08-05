@@ -19,7 +19,7 @@ export const CHANGELOG: LogEntry[] = [
     date: 'Aug 5, 2026',
     title: 'Room to grow',
     items: [
-      'Build as many depots as you can afford ($150k each). Every depot is named after its street and you can rename it any time in the Depots panel — the name shows on the map under its marker.',
+      'Build up to five depots ($150k each). Every depot is named after its street and you can rename it any time in the Depots panel — the name shows on the map under its marker.',
       "Buses now pull out from whichever depot is closest to their line's first stop, and drive home to it after the last run — a garage on each side of town means shorter deadheads.",
       'Each depot has its own level and add-ons: fleet parking is the total across all depots, and upgrades, workshops, wash bays and chargers are bought per depot.',
       'Old saves migrate automatically — your existing depot picks up a street name.',

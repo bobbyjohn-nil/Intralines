@@ -4,7 +4,7 @@ import type {
 } from './types';
 import {
   BUS_MODELS, DEPOT_CAPACITY, DEPOT_COST, DEPOT_UPGRADE_COST, DEPOT_UPKEEP_PER_DAY,
-  BUSES_PER_MECHANIC, CHARGERS_COST, HEADWAY_CHOICES, LINE_COLORS, LOAN_AMOUNT,
+  BUSES_PER_MECHANIC, CHARGERS_COST, HEADWAY_CHOICES, LINE_COLORS, LOAN_AMOUNT, MAX_DEPOTS,
   LOAN_FEE, LOAN_PAYOFF, LOAN_WEEKLY_INTEREST, MECHANIC_WAGE_PER_DAY,
   OFFICE_OVERHEAD_PER_DAY, SAVE_KEY_PREFIX,
   SAVE_VERSION, SPEEDS, START_CASH, STOP_COST, STOP_MAX_KMH, STOP_TIER_NAMES,
@@ -925,6 +925,11 @@ export const useGame = create<GameState>((set, get) => {
     buildDepot: (pt) => {
       const s = get();
       if (!s.graph || !s.pack) return;
+      if (s.depots.length >= MAX_DEPOTS) {
+        get().notify(`City planning caps you at ${MAX_DEPOTS} depots.`, 'bad');
+        set({ tool: 'select' });
+        return;
+      }
       if (s.cash < DEPOT_COST) {
         get().notify('Not enough cash for a depot.', 'bad');
         return;
