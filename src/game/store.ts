@@ -29,7 +29,7 @@ export interface DraftLine {
 
 export type Panel =
   | 'none' | 'lines' | 'line-edit' | 'fleet' | 'staff' | 'depot' | 'finance' | 'help'
-  | 'map-options' | 'report';
+  | 'map-options' | 'report' | 'station';
 
 export interface Notice {
   id: number;
@@ -91,6 +91,8 @@ export interface GameState {
   menuError: string | null;
   /** stop waiting for a relocation click while the route editor is active */
   moveStopId: string | null;
+  /** stop shown in the station viewer panel */
+  selectedStopId: string | null;
 
   // actions
   openCity: (pack: CityPack) => void;
@@ -113,6 +115,7 @@ export interface GameState {
   cancelDraft: () => void;
   finishDraft: () => void;
   selectLine: (id: string | null) => void;
+  selectStop: (id: string | null) => void;
   updateLine: (id: string, patch: Partial<BusLine>) => void;
   deleteLine: (id: string) => void;
   buyBus: (modelId: string) => void;
@@ -527,6 +530,7 @@ export const useGame = create<GameState>((set, get) => {
     basemapActive: 'offline',
     menuError: null,
     moveStopId: null,
+    selectedStopId: null,
 
     openCity: (pack) => {
       worker?.terminate();
@@ -1130,6 +1134,9 @@ export const useGame = create<GameState>((set, get) => {
 
     selectLine: (id) =>
       set({ selectedLineId: id, panel: id ? 'line-edit' : 'none' }),
+
+    selectStop: (id) =>
+      set({ selectedStopId: id, panel: id ? 'station' : 'none' }),
 
     updateLine: (id, patch) => {
       set((s) => ({ lines: s.lines.map((l) => (l.id === id ? { ...l, ...patch } : l)) }));

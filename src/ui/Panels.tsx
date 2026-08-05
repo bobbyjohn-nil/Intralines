@@ -16,6 +16,7 @@ import {
 import { fmtInt, fmtMoney } from './format';
 import type { CityPack, FleetEntry, LineStats, LngLat } from '../game/types';
 import { fastDistM } from '../game/geo';
+import { StationScene } from './StationScene';
 
 /** residents within a short walk of any of these points (centroid approx) */
 export function reachPop(pack: CityPack | null, pts: LngLat[]): number {
@@ -65,6 +66,7 @@ export function PanelHost() {
       {panel === 'depot' && <DepotPanel />}
       {panel === 'finance' && <FinancePanel />}
       {panel === 'report' && <ReportPanel />}
+      {panel === 'station' && <StationPanel />}
       {panel === 'help' && <HelpPanel />}
       {panel === 'map-options' && <MapOptionsPanel />}
     </div>
@@ -472,6 +474,13 @@ function LineEditPanel() {
           Add buses, tighten the rush-hour headway or run bigger models.
         </p>
       )}
+      {st && (st.avgDelayMin ?? 0) >= 1.5 && (
+        <p className="warn">
+          Running ≈{st.avgDelayMin.toFixed(1)} min behind timetable in traffic —
+          riders time their arrival to the schedule, so every late minute is
+          spent fuming at the stop.
+        </p>
+      )}
 
       <div className="btn-row">
         <button
@@ -826,6 +835,68 @@ function FleetCondition({ entry }: { entry: FleetEntry }) {
         )}
       </div>
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+
+function StationPanel() {
+  const stopId = useGame((s) => s.selectedStopId);
+  const stops = useGame((s) => s.stops);
+  const lines = useGame((s) => s.lines);
+  const stats = useGame((s) => s.stats);
+  const cash = useGame((s) => s.cash);
+  const upgradeStop = useGame((s) => s.upgradeStop);
+
+  const stop = stops.find((x) => x.id === stopId);
+  if (!stop) {
+    return (
+      <>
+        <PanelTitle title="Station" />
+        <p className="hint">Click a stop on the map to step inside.</p>
+      </>
+    );
+  }
+  const tier = stop.tier ?? 1;
+  const nextCost = STOP_UPGRADE_COST[tier + 1];
+  const served = lines.filter((l) => l.stopIds.includes(stop.id));
+  const crowd = stats?.crowdedStops?.find((c) => c.stopId === stop.id);
+  return (
+    <>
+      <PanelTitle title={stop.name} />
+      <StationScene key={stop.id + tier} stopId={stop.id} tier={tier} />
+      <div className="kv">
+        <span>Amenity</span>
+        <b>{STOP_TIER_NAMES[tier]} · handles {fmtInt(STOP_TIER_CAPACITY[tier])}/day</b>
+      </div>
+      <div className="kv">
+        <span>Lines calling here</span>
+        <b>{served.length ? served.map((l) => l.name).join(', ') : 'none yet'}</b>
+      </div>
+      {crowd && (
+        <p className="warn">
+          Overcrowded — ≈{fmtInt(crowd.load)} boardings/day against a comfortable{' '}
+          {fmtInt(crowd.cap)}. Upgrade it or spread the load.
+        </p>
+      )}
+      <p className="hint">
+        Riders check the timetable and reach the platform just before the bus is
+        due — when traffic runs buses late, they're stuck waiting and satisfaction
+        slips. Stick around: buses that call here pull up right in this view.
+      </p>
+      {nextCost ? (
+        <button
+          className="btn primary"
+          disabled={cash < nextCost}
+          title={cash < nextCost ? `Need ${fmtMoney(nextCost)}` : ''}
+          onClick={() => upgradeStop(stop.id)}
+        >
+          Upgrade to {STOP_TIER_NAMES[tier + 1]} ({fmtMoney(nextCost)})
+        </button>
+      ) : (
+        <p className="good">✓ Full station — top of the line.</p>
+      )}
+    </>
   );
 }
 

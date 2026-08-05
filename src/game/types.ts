@@ -167,6 +167,12 @@ export interface LineStats {
   dailyFuelCost: number;
   /** times each bus tops up at the depot per day (daily km vs tank) */
   refuelsPerDay: number;
+  /**
+   * ridership-weighted minutes buses run behind timetable (traffic).
+   * Passengers time their arrival to the schedule, so this is how long
+   * they're left standing at the stop.
+   */
+  avgDelayMin: number;
 }
 
 export interface NetworkStats {

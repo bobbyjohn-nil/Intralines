@@ -990,6 +990,23 @@ button.chip:hover {
   border: 1px solid rgba(0, 0, 0, 0.25);
 }
 
+/* ---------- station viewer ---------- */
+
+.station-scene {
+  width: 100%;
+  height: 215px;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid rgba(60, 55, 40, 0.18);
+  margin-bottom: 10px;
+  background: #dfe9ee;
+}
+
+.station-scene canvas {
+  display: block;
+  width: 100% !important;
+}
+
 /* ---------- airport / rail landmarks ---------- */
 
 .poi-marker {

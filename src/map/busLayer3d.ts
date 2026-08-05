@@ -216,12 +216,16 @@ export class BusLayer3D implements CustomLayerInterface {
   // passengers
   private sites: StopSite[] = [];
   private lastServed = new Map<string, number>(); // stopId -> game clock min
+  private lastServedBy = new Map<string, string>(); // stopId -> lineId
   private agents: Agent[] = [];
   private agentMeshes: THREE.Group[] = [];
   private prevClock = -1;
 
   /** last-rendered vehicle states, for tests/debugging */
   lastFrame: { line: string; k: number; pt: LngLat | null; visible: boolean }[] = [];
+
+  /** operator brand color — buses wear it with a line-color stripe */
+  brandColor = '';
 
   constructor(private getClockMin: () => number) {}
 
@@ -351,7 +355,7 @@ export class BusLayer3D implements CustomLayerInterface {
       const cycleMin = 2 * outboundMin + 2 * LAYOVER_MIN;
       const meshes: THREE.Group[] = [];
       for (let k = 0; k < st.vehiclesUsed; k++) {
-        const g = makeBusMesh(line.color, model.id);
+        const g = makeBusMesh(line.color, model.id, this.brandColor);
         g.visible = false;
         this.scene.add(g);
         meshes.push(g);
@@ -535,6 +539,22 @@ export class BusLayer3D implements CustomLayerInterface {
     return Math.min((rate / 60) * Math.max(clock - last, 0), 60);
   }
 
+  /** live station snapshot for the station viewer panel */
+  stationInfo(stopId: string): {
+    waiting: number;
+    lastServedMin: number | null;
+    lineId: string | null;
+  } {
+    const site = this.sites.find((s) => s.id === stopId) ?? null;
+    const clock = this.getClockMin();
+    const hourInt = Math.floor((((clock % 1440) + 1440) % 1440) / 60) % 24;
+    return {
+      waiting: site ? Math.round(this.waitingCount(site, clock, hourInt)) : 0,
+      lastServedMin: this.lastServed.get(stopId) ?? null,
+      lineId: this.lastServedBy.get(stopId) ?? null,
+    };
+  }
+
   getStopCounts(): { id: string; pt: LngLat; count: number }[] {
     const clock = this.getClockMin();
     const dayMin = ((clock % 1440) + 1440) % 1440;
@@ -556,7 +576,7 @@ export class BusLayer3D implements CustomLayerInterface {
     const mPerPx = (156543.03392 * this.cosLat) / Math.pow(2, zoom);
     const busScale = Math.min(Math.max((25 * mPerPx) / 11, 1.15), 29);
 
-    const servedNow = new Set<string>();
+    const servedNow = new Map<string, string>(); // stopId -> serving lineId
     this.lastFrame = [];
     for (const a of this.anims) {
       const { line } = a;
@@ -646,7 +666,7 @@ export class BusLayer3D implements CustomLayerInterface {
             // is this bus at (or basically at) one of its stops?
             for (let si = 0; si < line.stopDist.length; si++) {
               if (Math.abs(hit.lineD - line.stopDist[si]) < 25) {
-                servedNow.add(line.stopIds[si]);
+                servedNow.set(line.stopIds[si], line.id);
                 break;
               }
             }
@@ -656,7 +676,10 @@ export class BusLayer3D implements CustomLayerInterface {
         this.lastFrame.push({ line: line.id, k, pt: seenPt, visible });
       }
     }
-    for (const sid of servedNow) this.lastServed.set(sid, clock);
+    for (const [sid, lid] of servedNow) {
+      this.lastServed.set(sid, clock);
+      this.lastServedBy.set(sid, lid);
+    }
 
     this.updatePassengers(clock, hourInt, servedNow, zoom, mPerPx);
 
@@ -673,7 +696,8 @@ export class BusLayer3D implements CustomLayerInterface {
 
   /** persistent pedestrians: spawn → walk in → linger at the stop → board */
   private updatePassengers(
-    clock: number, hourInt: number, servedNow: Set<string>, zoom: number, mPerPx: number,
+    clock: number, hourInt: number, servedNow: Map<string, string>, zoom: number,
+    mPerPx: number,
   ): void {
     const dt = this.prevClock < 0 ? 0 : Math.max(0, Math.min(clock - this.prevClock, 30));
     this.prevClock = clock;
@@ -775,10 +799,21 @@ function applyBusLighting(mesh: THREE.Group, day: number): void {
 
 const bodyGeoCache = new Map<string, THREE.BoxGeometry>();
 
-function makeBusMesh(color: string, modelId: string): THREE.Group {
+/**
+ * Company-liveried bus: the body wears the operator's brand color, a full-
+ * length stripe wears the line's color, and each model keeps a recognizable
+ * silhouette (stubby minibus, artic with a bellows joint, battery pack on
+ * the electric's roof). Exported so the station viewer can render the same
+ * buses up close.
+ */
+export function makeBusMesh(
+  color: string,
+  modelId: string,
+  brandColor?: string,
+): THREE.Group {
   const len = modelId === 'artic' ? 16 : modelId === 'minibus' ? 7 : 11;
   const g = new THREE.Group();
-  const bodyColor = new THREE.Color(color);
+  const bodyColor = new THREE.Color(brandColor || color);
   const bodyMat = new THREE.MeshLambertMaterial({
     color: bodyColor,
     emissive: bodyColor.clone().multiplyScalar(0.28),
@@ -786,7 +821,9 @@ function makeBusMesh(color: string, modelId: string): THREE.Group {
   const glassMat = new THREE.MeshLambertMaterial({ color: 0x33404f });
   const glassMat2 = new THREE.MeshLambertMaterial({ color: 0x33404f });
   const wheelMat = new THREE.MeshLambertMaterial({ color: 0x1d1d20 });
-  const roofMat = new THREE.MeshLambertMaterial({ color: 0xf5f2ea });
+  const roofMat = new THREE.MeshLambertMaterial({
+    color: modelId === 'minibus' ? 0xffffff : 0xf5f2ea,
+  });
 
   const key = `body-${len}`;
   let bodyGeo = bodyGeoCache.get(key);
@@ -798,6 +835,17 @@ function makeBusMesh(color: string, modelId: string): THREE.Group {
   body.position.y = 1.55;
   g.add(body);
 
+  // the line's color rides on a full-length stripe so routes stay
+  // tellable apart even though every bus wears the company paint
+  const stripeColor = new THREE.Color(color);
+  const stripeMat = new THREE.MeshLambertMaterial({
+    color: stripeColor,
+    emissive: stripeColor.clone().multiplyScalar(0.3),
+  });
+  const stripe = new THREE.Mesh(new THREE.BoxGeometry(len - 0.2, 0.42, 2.68), stripeMat);
+  stripe.position.y = 1.05;
+  g.add(stripe);
+
   const windows = new THREE.Mesh(new THREE.BoxGeometry(len - 0.6, 0.9, 2.64), glassMat);
   windows.position.y = 2.35;
   g.add(windows);
@@ -805,6 +853,32 @@ function makeBusMesh(color: string, modelId: string): THREE.Group {
   const roof = new THREE.Mesh(new THREE.BoxGeometry(len - 0.4, 0.18, 2.4), roofMat);
   roof.position.y = 2.95;
   g.add(roof);
+
+  if (modelId === 'artic') {
+    // accordion joint between the two halves
+    const bellows = new THREE.Mesh(
+      new THREE.BoxGeometry(1.1, 2.3, 2.66),
+      new THREE.MeshLambertMaterial({ color: 0x22242a }),
+    );
+    bellows.position.y = 1.7;
+    g.add(bellows);
+  } else if (modelId === 'electric') {
+    // rooftop battery pack + a green energy flash on the nose
+    const pack = new THREE.Mesh(
+      new THREE.BoxGeometry(len * 0.55, 0.34, 1.7),
+      new THREE.MeshLambertMaterial({ color: 0x2b2f36 }),
+    );
+    pack.position.y = 3.2;
+    g.add(pack);
+    const flash = new THREE.Mesh(
+      new THREE.BoxGeometry(0.12, 0.5, 1.1),
+      new THREE.MeshLambertMaterial({
+        color: 0x37d67a, emissive: 0x1f8a4c, emissiveIntensity: 0.7,
+      }),
+    );
+    flash.position.set(len / 2 + 0.03, 1.05, 0);
+    g.add(flash);
+  }
 
   const windshield = new THREE.Mesh(new THREE.BoxGeometry(0.1, 1.3, 2.3), glassMat2);
   windshield.position.set(len / 2 + 0.01, 1.9, 0);

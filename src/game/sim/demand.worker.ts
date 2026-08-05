@@ -8,6 +8,7 @@ import {
   DWELL_SEC,
   HOURLY_PROFILE,
   isPeakHour,
+  trafficFactor,
   LAYOVER_MIN,
   MAX_WALK_M,
   MAX_WAIT_MIN,
@@ -156,20 +157,32 @@ function computeNetwork(msg: NetworkMsg) {
     const headwayEff = Math.max(l.headwayMin, Math.min(stretch, cycleMin));
     const headwayEffPeak = Math.max(peakHeadway, Math.min(stretch, cycleMin));
     const effAt = (h: number) => (isPeakHour(h) ? headwayEffPeak : headwayEff);
-    // typical wait, demand-weighted across the service window
+    // Passengers check the timetable and reach the stop just before the
+    // bus is due — but traffic makes buses run late, and every late
+    // minute is a minute they stand there fuming. A minority still shows
+    // up unplanned and waits roughly half a headway.
+    const delayAt = (h: number) =>
+      Math.max(0, rideMinFull * (trafficFactor(h) - 1) * 0.6);
+    const waitAtHour = (h: number) =>
+      0.7 * Math.min(2 + delayAt(h), MAX_WAIT_MIN) +
+      0.3 * Math.min(effAt(h) / 2, MAX_WAIT_MIN);
+    // typical wait + delay, demand-weighted across the service window
     let wSum = 0;
-    let wEff = 0;
+    let wWait = 0;
+    let wDelay = 0;
     for (let h = l.firstHour; h < l.lastHour; h++) {
       wSum += HOURLY_PROFILE[h];
-      wEff += HOURLY_PROFILE[h] * effAt(h);
+      wWait += HOURLY_PROFILE[h] * waitAtHour(h);
+      wDelay += HOURLY_PROFILE[h] * delayAt(h);
     }
-    const headwayForWait = wSum > 0 ? wEff / wSum : headwayEff;
+    const headwayForWait = wSum > 0 ? (2 * wWait) / wSum : headwayEff;
+    const avgDelayMin = wSum > 0 ? wDelay / wSum : 0;
     const stopsOnLine = l.stopIds
       .map((sid) => stopIndex.get(sid))
       .filter((x): x is number => x !== undefined);
     return {
       l, rideMinFull, cycleMin, cycleKm, vehiclesNeeded, headwayEff, headwayEffPeak,
-      effAt, headwayForWait, stopsOnLine,
+      effAt, headwayForWait, avgDelayMin, stopsOnLine,
     };
   });
 
@@ -464,6 +477,7 @@ function computeNetwork(msg: NetworkMsg) {
       vehiclesUsed,
       dailyFuelCost,
       refuelsPerDay,
+      avgDelayMin: Math.round(lc.avgDelayMin * 10) / 10,
     };
   });
 
@@ -521,6 +535,14 @@ function computeNetwork(msg: NetworkMsg) {
       ? perLine.reduce((s, p) => s + Math.min(p.peakLoadFactor, 1.4), 0) / perLine.length
       : 0;
   const coveragePct = totalPop > 0 ? (covered / totalPop) * 100 : 0;
+  // punctuality sting: passengers timed their arrival to the schedule, so
+  // every minute the bus runs late is spent standing at the curb
+  const boardSum = perLine.reduce((s, p) => s + p.dailyBoardings, 0);
+  const netDelay =
+    boardSum > 0
+      ? perLine.reduce((s, p) => s + p.avgDelayMin * p.dailyBoardings, 0) / boardSum
+      : 0;
+  const latePen = Math.min(8, netDelay * 1.5);
   // stop comfort: share of served stops upgraded past a bare sign (0..1)
   let comfortPts = 0;
   let servedStops = 0;
@@ -537,7 +559,8 @@ function computeNetwork(msg: NetworkMsg) {
         (1 - Math.min(avgWait, 20) / 20) * 35 +
         (1 - Math.min(avgLoad, 1.4) / 1.4) * 20 +
         comfort * 6 -
-        stopCrowdPen,
+        stopCrowdPen -
+        latePen,
     ),
   );
 

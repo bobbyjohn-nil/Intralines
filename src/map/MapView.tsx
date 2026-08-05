@@ -161,6 +161,14 @@ export function MapView({ pack }: { pack: CityPack }) {
         const st = useGame.getState();
         const pt: [number, number] = [e.lngLat.lng, e.lngLat.lat];
         if (st.tool === 'select') {
+          // stops first: they sit on top of the line ribbons
+          const stopHits = map.getLayer('stops-pt')
+            ? map.queryRenderedFeatures(e.point, { layers: ['stops-pt'] })
+            : [];
+          if (stopHits.length && stopHits[0].properties?.id) {
+            st.selectStop(String(stopHits[0].properties.id));
+            return;
+          }
           const feats = map.getLayer('lines-hit')
             ? map.queryRenderedFeatures(e.point, { layers: ['lines-hit'] })
             : [];
@@ -586,9 +594,12 @@ export function MapView({ pack }: { pack: CityPack }) {
     updateDraft(map, st.draft);
     updateTraffic(map, pack, st.trafficView, st.trafficHour, reliefNow());
     syncDepot();
-    busLayerRef.current?.setNetwork(
-      st.lines, st.stats?.perLine ?? [], st.stops, lineExtras(),
-    );
+    if (busLayerRef.current) {
+      busLayerRef.current.brandColor = st.companyColor;
+      busLayerRef.current.setNetwork(
+        st.lines, st.stats?.perLine ?? [], st.stops, lineExtras(),
+      );
+    }
   }
 
   function syncDepot(): void {
@@ -662,8 +673,9 @@ export function MapView({ pack }: { pack: CityPack }) {
   }, [trafficView, trafficHour, stats, pack]);
 
   useEffect(() => {
-    if (readyRef.current) {
-      busLayerRef.current?.setNetwork(
+    if (readyRef.current && busLayerRef.current) {
+      busLayerRef.current.brandColor = useGame.getState().companyColor;
+      busLayerRef.current.setNetwork(
         lines, stats?.perLine ?? [], stops, lineExtras(),
       );
     }

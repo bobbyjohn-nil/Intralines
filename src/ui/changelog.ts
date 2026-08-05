@@ -15,6 +15,17 @@ export interface LogEntry {
 
 export const CHANGELOG: LogEntry[] = [
   {
+    version: '1.13',
+    date: 'Aug 5, 2026',
+    title: 'Step inside the station',
+    items: [
+      'Click any stop to step inside it: a live 3D view of the platform with the actual tier of furniture (pole sign → glass shelter → canopied station) and a crowd that grows and shrinks with the real waiting count. Keep the tab open and buses that call there pull up in the view — doors open, riders swap, doors close, and it drives off.',
+      'Punctual passengers: riders now check the timetable and reach the stop just before the bus is due. When traffic runs buses behind schedule, they stand there waiting — satisfaction drops, the line panel warns how many minutes late you run, and beating congestion (or adding buses) becomes a real lever.',
+      'Company liveries: every bus now wears your brand color with a full-length stripe in its line color, and each model got its own look — the stubby Sparrow, the Goliath with a proper accordion joint, and the Volt-E with a roof battery pack and a green nose flash.',
+      'The station panel also shows amenity capacity, the lines calling there, an overcrowding warning and a one-click upgrade.',
+    ],
+  },
+  {
     version: '1.12',
     date: 'Aug 5, 2026',
     title: 'Planes, trains and paperwork',
