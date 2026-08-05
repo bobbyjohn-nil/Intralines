@@ -15,6 +15,18 @@ export interface LogEntry {
 
 export const CHANGELOG: LogEntry[] = [
   {
+    version: '1.12',
+    date: 'Aug 5, 2026',
+    title: 'Planes, trains and paperwork',
+    items: [
+      'Airport and regional rail demand: cities now have an airport and rail stations (marked on the map) whose flyers and train riders want bus connections — serve them and they ride. Two new layers in the demand dropdown show where they are; real cities pull theirs from OpenStreetMap, and Riverton grew a Regional Airport plus Union, Eastville and Weston stations.',
+      'Found your company: starting in a new city now opens with naming your transit company and picking its brand color — your first line wears it, and the company name sits in the top bar and on your saves.',
+      'Zoning laws arrived: depots can only be built on industrial land (workplace-heavy, low-density) — no more bus garages in residential neighborhoods or the dense downtown core. Existing depots are grandfathered in.',
+      'Quarters are now 10 days long, so report cards and grants come around faster.',
+      'Depot names on the map only show while the Depot panel is open, and night roads are brighter — halfway between the old daytime look and full asphalt-dark — so the grid stays readable after sunset.',
+    ],
+  },
+  {
     version: '1.11',
     date: 'Aug 5, 2026',
     title: 'Never a blank page',

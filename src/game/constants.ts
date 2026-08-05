@@ -65,10 +65,10 @@ export function wearLabel(wear: number): string {
   return wear < 25 ? 'Fresh' : wear < 50 ? 'Good' : wear < 75 ? 'Worn' : 'Ragged';
 }
 
-// The game calendar: 16 days to a quarter, 4 quarters to a year. The
+// The game calendar: 10 days to a quarter, 4 quarters to a year. The
 // Transit Authority grades the network at the end of every quarter and
 // pays a grant (or levies a fee) based on the overall mark.
-export const DAYS_PER_QUARTER = 16;
+export const DAYS_PER_QUARTER = 10;
 export const QUARTERS_PER_YEAR = 4;
 export const QUARTER_MIN = DAYS_PER_QUARTER * 1440;
 export const YEAR_MIN = QUARTER_MIN * QUARTERS_PER_YEAR;

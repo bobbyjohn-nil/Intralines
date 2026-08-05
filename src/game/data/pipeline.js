@@ -69,6 +69,96 @@ export function parseScenic(overpass) {
   return { water: water.slice(0, 400), parks: parks.slice(0, 700) };
 }
 
+/** airports + regional rail stations — special trip generators */
+export function overpassPoiQuery(bbox) {
+  const [w, s, e, n] = bbox;
+  const bb = `(${s},${w},${n},${e})`;
+  return (
+    `[out:json][timeout:120];(` +
+    `way["aeroway"="aerodrome"]${bb};` +
+    `relation["aeroway"="aerodrome"]${bb};` +
+    `node["aeroway"="aerodrome"]${bb};` +
+    `node["railway"="station"]["station"!~"subway|light_rail|monorail"]${bb};` +
+    `way["railway"="station"]["station"!~"subway|light_rail|monorail"]${bb};` +
+    `);out center tags;`
+  );
+}
+
+/**
+ * Overpass POI response -> Poi[]. Airports with an IATA code count as
+ * commercial (big demand); private strips are dropped. Rail stations are
+ * deduplicated (OSM often maps one station several times) and capped.
+ */
+export function parsePois(overpass) {
+  const airports = [];
+  const rails = [];
+  for (const el of overpass.elements ?? []) {
+    const tags = el.tags ?? {};
+    const lng = el.lon ?? el.center?.lon;
+    const lat = el.lat ?? el.center?.lat;
+    if (lng === undefined || lat === undefined) continue;
+    const pt = [q5(lng), q5(lat)];
+    if (tags.aeroway === 'aerodrome') {
+      if (tags.access === 'private' || tags['aerodrome:type'] === 'private') continue;
+      if (tags.abandoned === 'yes' || tags.disused === 'yes') continue;
+      airports.push({
+        kind: 'airport',
+        pt,
+        name: tags.name || 'Airport',
+        big: Boolean(tags.iata),
+      });
+    } else if (tags.railway === 'station') {
+      rails.push({ kind: 'rail', pt, name: tags.name || 'Rail station' });
+    }
+  }
+  // commercial airports first, then whatever's left; at most a few
+  airports.sort((a, b) => Number(b.big) - Number(a.big));
+  // dedupe rail stations within ~300 m of one another
+  const keptRail = [];
+  for (const r of rails) {
+    const dup = keptRail.some(
+      (k) =>
+        Math.abs(k.pt[0] - r.pt[0]) * 87000 < 300 &&
+        Math.abs(k.pt[1] - r.pt[1]) * 111000 < 300,
+    );
+    if (!dup) keptRail.push(r);
+  }
+  return [...airports.slice(0, 3), ...keptRail.slice(0, 12)];
+}
+
+/**
+ * Attach POI trip demand to the nearest block group: shows up on the air /
+ * rail heatmap layers and adds job-like attraction so bus lines serving an
+ * airport or a train station actually win riders.
+ */
+export function applyPoiDemand(bgs, pois) {
+  if (!bgs.length) return;
+  for (const poi of pois) {
+    let best = null;
+    let bestKm = Infinity;
+    const cos = Math.cos((poi.pt[1] * Math.PI) / 180);
+    for (const bg of bgs) {
+      const dx = (bg.centroid[0] - poi.pt[0]) * 111.32 * cos;
+      const dy = (bg.centroid[1] - poi.pt[1]) * 110.54;
+      const d = Math.sqrt(dx * dx + dy * dy);
+      if (d < bestKm) {
+        bestKm = d;
+        best = bg;
+      }
+    }
+    const maxKm = poi.kind === 'airport' ? 4 : 2;
+    if (!best || bestKm > maxKm) continue;
+    if (poi.kind === 'airport') {
+      const trips = poi.big ? 2600 : 400;
+      best.air = (best.air || 0) + trips;
+      best.jobs += poi.big ? 1300 : 160;
+    } else {
+      best.rail = (best.rail || 0) + 550;
+      best.jobs += 220;
+    }
+  }
+}
+
 const keyOf = (p) => `${Math.round(p[0] * 1e6)}:${Math.round(p[1] * 1e6)}`;
 
 /** join way segments end-to-end into closed rings (best effort) */

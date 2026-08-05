@@ -17,9 +17,9 @@ At the end of every working session, cut exactly ONE new version:
 - `npm test` — pipeline fixture tests.
 - `npm run build` — type-check + production build.
 - Playwright e2e against `npx vite preview --port 4173` (scripts live in
-  the session scratchpad; flow: menu → Play → Riverton → depot → Sparrow →
-  drivers → draw line → assign bus → verify moving buses, no console
-  errors).
+  the session scratchpad; flow: menu → Play → Riverton → found company →
+  depot on industrial land (the airport works) → Sparrow → drivers → draw
+  line → assign bus → verify moving buses, no console errors).
 
 ## Deployment
 

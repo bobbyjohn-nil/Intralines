@@ -991,8 +991,9 @@ function DepotPanel() {
       <>
         <PanelTitle title="Depot" />
         <p className="hint">
-          Your company needs a home base. Pick a spot with good street access — every bus
-          starts and ends its day here.
+          Your company needs a home base. Zoning only allows depots on industrial
+          land — workplace-heavy, low-density areas like the industrial park or out
+          by the airport. Every bus starts and ends its day here.
         </p>
         <button className="btn primary with-icon" onClick={() => setTool('depot-place')}>
           <IconDepot size={15} /> Place depot ({fmtMoney(nextDepotCost(0))})
@@ -1226,7 +1227,8 @@ function HelpPanel() {
       <ol className="help-list">
         <li>
           <b>Place your depot.</b> It's home base for every bus — hit the pulsing
-          <b> Place depot</b> button in the bottom bar, then click a spot near a road.
+          <b> Place depot</b> button in the bottom bar, then click industrial land
+          near a road (zoning bars depots from residential and dense downtown areas).
         </li>
         <li>
           <b>Buy buses</b> in the Fleet panel and <b>hire drivers</b> in Staff (one per bus).

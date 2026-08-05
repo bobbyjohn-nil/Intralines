@@ -271,6 +271,7 @@ function SavesTab({
           <div className="save-main">
             <b>{meta.name}</b>
             <small>
+              {sv.companyName ? `${sv.companyName} · ` : ''}
               {gameClock(sv.clockMin)} · {money(sv.cash)} · {sv.lines.length}{' '}
               {sv.lines.length === 1 ? 'line' : 'lines'} ·{' '}
               {sv.fleet.reduce((s, f) => s + f.count, 0)} buses

@@ -8,10 +8,12 @@ import { DraftBar } from './ui/DraftBar';
 import { Notices } from './ui/Notices';
 import { Menu } from './ui/Menu';
 import { Loading } from './ui/Loading';
+import { Founding } from './ui/Founding';
 
 export default function App() {
   const phase = useGame((s) => s.phase);
   const pack = useGame((s) => s.pack);
+  const companyName = useGame((s) => s.companyName);
 
   // game clock: tick 10x per second of real time
   useEffect(() => {
@@ -57,6 +59,8 @@ export default function App() {
 
   if (phase === 'loading') return <Loading />;
   if (phase !== 'playing' || !pack) return <Menu />;
+  // new company in this city: name it before the map appears
+  if (!companyName) return <Founding />;
 
   return (
     <div className="game-root">

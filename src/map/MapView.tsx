@@ -36,6 +36,7 @@ export function MapView({ pack }: { pack: CityPack }) {
   const busLayerRef = useRef<BusLayer3D | null>(null);
   const readyRef = useRef(false);
   const depotMarkersRef = useRef<Map<string, maplibregl.Marker>>(new Map());
+  const poiMarkersRef = useRef<maplibregl.Marker[]>([]);
   const chipsRef = useRef<Map<string, maplibregl.Marker>>(new Map());
   const labelsRef = useRef<Map<string, maplibregl.Marker>>(new Map());
   const popupRef = useRef<maplibregl.Popup | null>(null);
@@ -50,6 +51,7 @@ export function MapView({ pack }: { pack: CityPack }) {
   const depots = useGame((s) => s.depots);
   const stats = useGame((s) => s.stats);
   const tool = useGame((s) => s.tool);
+  const panel = useGame((s) => s.panel);
   const basemapPref = useGame((s) => s.basemapPref);
 
   // create the map once per city (and re-create when basemap mode changes)
@@ -126,6 +128,25 @@ export function MapView({ pack }: { pack: CityPack }) {
         addBoundaryMask(map, pack.meta.bbox);
         ensureOverlays(map);
         map.addLayer(busLayer);
+        // airports + rail stations: fixed landmarks with their own demand
+        for (const poi of pack.pois ?? []) {
+          const el = document.createElement('div');
+          el.className = `poi-marker poi-${poi.kind}`;
+          el.innerHTML =
+            poi.kind === 'airport'
+              ? '<svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor">' +
+                '<path d="M21 15.5v-2l-8-4.5V4a1.5 1.5 0 0 0-3 0v5L2 13.5v2l8-2.2v4.9l-2.2 1.6v1.7l3.7-1 3.7 1v-1.7L13 18.2v-4.9z"/></svg>'
+              : '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">' +
+                '<rect x="5" y="3" width="14" height="13" rx="3"/>' +
+                '<path d="M5 10h14M9 19l-2 2.5M15 19l2 2.5"/>' +
+                '<circle cx="9" cy="13" r="0.6"/><circle cx="15" cy="13" r="0.6"/></svg>';
+          el.title = poi.name;
+          poiMarkersRef.current.push(
+            new maplibregl.Marker({ element: el, anchor: 'center' })
+              .setLngLat(poi.pt)
+              .addTo(map),
+          );
+        }
         readyRef.current = true;
         syncAll();
       });
@@ -297,22 +318,25 @@ export function MapView({ pack }: { pack: CityPack }) {
         if (map.getLayer('parks')) {
           map.setPaintProperty('parks', 'fill-color', blend(PALETTE.park, '#2f3b2c'));
         }
-        // roads dim to asphalt tones after dark
+        // roads dim after dark — but only halfway to asphalt, so the street
+        // grid stays readable at night (split the difference between the
+        // original bright look and the fully-dark one)
+        const roadBlend = (a: string, b: string) => mixColor(a, b, (1 - day) * 0.5);
         if (map.getLayer('road')) {
           // offline pack style: tiered by speed inside one layer
           map.setPaintProperty('road', 'line-color', [
             'case',
-            ['>=', ['get', 'kmh'], 70], blend(PALETTE.motorway, '#57503c'),
-            ['>=', ['get', 'kmh'], 42], blend(PALETTE.primary, '#514b3a'),
-            ['>=', ['get', 'kmh'], 38], blend(PALETTE.tertiary, '#484659'),
-            blend(PALETTE.street, '#434a5a'),
+            ['>=', ['get', 'kmh'], 70], roadBlend(PALETTE.motorway, '#57503c'),
+            ['>=', ['get', 'kmh'], 42], roadBlend(PALETTE.primary, '#514b3a'),
+            ['>=', ['get', 'kmh'], 38], roadBlend(PALETTE.tertiary, '#484659'),
+            roadBlend(PALETTE.street, '#434a5a'),
           ]);
           map.setPaintProperty('road-casing', 'line-color', [
             'case',
-            ['>=', ['get', 'kmh'], 70], blend(PALETTE.motorwayCasing, '#3a3527'),
-            ['>=', ['get', 'kmh'], 42], blend(PALETTE.primaryCasing, '#37332a'),
-            ['>=', ['get', 'kmh'], 38], blend(PALETTE.tertiaryCasing, '#2c3038'),
-            blend(PALETTE.streetCasing, '#272c37'),
+            ['>=', ['get', 'kmh'], 70], roadBlend(PALETTE.motorwayCasing, '#3a3527'),
+            ['>=', ['get', 'kmh'], 42], roadBlend(PALETTE.primaryCasing, '#37332a'),
+            ['>=', ['get', 'kmh'], 38], roadBlend(PALETTE.tertiaryCasing, '#2c3038'),
+            roadBlend(PALETTE.streetCasing, '#272c37'),
           ]);
         }
         const ONLINE_NIGHT: [string, string, string][] = [
@@ -328,7 +352,9 @@ export function MapView({ pack }: { pack: CityPack }) {
           ['road-motorway-casing', PALETTE.motorwayCasing, '#3a3527'],
         ];
         for (const [id, dayC, nightC] of ONLINE_NIGHT) {
-          if (map.getLayer(id)) map.setPaintProperty(id, 'line-color', blend(dayC, nightC));
+          if (map.getLayer(id)) {
+            map.setPaintProperty(id, 'line-color', roadBlend(dayC, nightC));
+          }
         }
       }, 1500);
     };
@@ -348,6 +374,8 @@ export function MapView({ pack }: { pack: CityPack }) {
       readyRef.current = false;
       depotMarkersRef.current.forEach((m) => m.remove());
       depotMarkersRef.current.clear();
+      poiMarkersRef.current.forEach((m) => m.remove());
+      poiMarkersRef.current = [];
       map?.remove();
       mapRef.current = null;
     };
@@ -495,6 +523,8 @@ export function MapView({ pack }: { pack: CityPack }) {
       kv('Jobs', fmtI(bg.jobs)) +
       ((bg.edu ?? 0) > 0 ? kv('· in education', fmtI(bg.edu ?? 0)) : '') +
       ((bg.tour ?? 0) > 0 ? kv('· in tourism', fmtI(bg.tour ?? 0)) : '') +
+      ((bg.air ?? 0) > 0 ? kv('· air travellers', fmtI(bg.air ?? 0)) : '') +
+      ((bg.rail ?? 0) > 0 ? kv('· rail connections', fmtI(bg.rail ?? 0)) : '') +
       kv('Density', `${fmtI((bg.pop + bg.jobs) / Math.max(bg.areaKm2, 0.02))} /km²`);
     let modeHtml = '';
     const m = st.stats?.bgModes?.[idx];
@@ -647,6 +677,14 @@ export function MapView({ pack }: { pack: CityPack }) {
       tool === 'line-new' ? 'crosshair' : tool === 'depot-place' ? 'copy' : '';
     map.getCanvas().style.cursor = cursor;
   }, [tool]);
+
+  // depot name chips only show while the Depot panel is open
+  useEffect(() => {
+    divRef.current?.classList.toggle(
+      'show-depot-names',
+      panel === 'depot' || tool === 'depot-place',
+    );
+  }, [panel, tool]);
 
   return <div ref={divRef} className="map-root" />;
 }

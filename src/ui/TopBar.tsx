@@ -16,6 +16,8 @@ export function TopBar() {
   const setSpeed = useGame((s) => s.setSpeed);
   const togglePause = useGame((s) => s.togglePause);
   const backToMenu = useGame((s) => s.backToMenu);
+  const companyName = useGame((s) => s.companyName);
+  const companyColor = useGame((s) => s.companyColor);
 
   const { year, quarter, day, time } = fmtClock(clockMin);
   // riders you've put on buses are cars you've taken off the road
@@ -38,7 +40,13 @@ export function TopBar() {
       <button className="chip ghost" onClick={backToMenu} title="Back to city select">
         ‹ {pack?.meta.name ?? ''}
       </button>
-      <div className="chip clock" title={`Day ${day} of 16 in this quarter`}>
+      {companyName && (
+        <div className="chip company" title={`${companyName} — your company`}>
+          <span className="brand-dot" style={{ background: companyColor }} />
+          {companyName}
+        </div>
+      )}
+      <div className="chip clock" title={`Day ${day} of 10 in this quarter`}>
         <span className="dim">
           Year {year} · Quarter {quarter}
         </span>{' '}

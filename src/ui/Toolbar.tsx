@@ -12,13 +12,15 @@ function HeatDropdown({
   heatmap,
   setHeatmap,
 }: {
-  heatmap: 'off' | 'pop' | 'jobs' | 'tour' | 'edu' | 'modes';
-  setHeatmap: (h: 'off' | 'pop' | 'jobs' | 'tour' | 'edu' | 'modes') => void;
+  heatmap: 'off' | 'pop' | 'jobs' | 'tour' | 'edu' | 'air' | 'rail' | 'modes';
+  setHeatmap: (h: 'off' | 'pop' | 'jobs' | 'tour' | 'edu' | 'air' | 'rail' | 'modes') => void;
 }) {
   const [open, setOpen] = useState(false);
   const boxRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
-  const active = heatmap === 'tour' || heatmap === 'edu' || heatmap === 'modes';
+  const active =
+    heatmap === 'tour' || heatmap === 'edu' || heatmap === 'air' ||
+    heatmap === 'rail' || heatmap === 'modes';
 
   useEffect(() => {
     if (!open) return;
@@ -30,7 +32,7 @@ function HeatDropdown({
     return () => window.removeEventListener('mousedown', close);
   }, [open]);
 
-  const pick = (h: 'tour' | 'edu' | 'modes') => {
+  const pick = (h: 'tour' | 'edu' | 'air' | 'rail' | 'modes') => {
     setHeatmap(heatmap === h ? 'off' : h);
     setOpen(false);
   };
@@ -48,9 +50,13 @@ function HeatDropdown({
             ? 'Tourism'
             : heatmap === 'edu'
               ? 'Education'
-              : heatmap === 'modes'
-                ? 'Modes'
-                : 'More'} ▾
+              : heatmap === 'air'
+                ? 'Airport'
+                : heatmap === 'rail'
+                  ? 'Rail'
+                  : heatmap === 'modes'
+                    ? 'Modes'
+                    : 'More'} ▾
         </span>
       </button>
       {open &&
@@ -71,6 +77,20 @@ function HeatDropdown({
             >
               Educational demand
               <small>schools and campuses</small>
+            </button>
+            <button
+              className={heatmap === 'air' ? 'on' : ''}
+              onClick={() => pick('air')}
+            >
+              Airport demand
+              <small>flyers and airport staff needing a ride</small>
+            </button>
+            <button
+              className={heatmap === 'rail' ? 'on' : ''}
+              onClick={() => pick('rail')}
+            >
+              Regional rail demand
+              <small>train riders connecting to local transit</small>
             </button>
             <button
               className={heatmap === 'modes' ? 'on' : ''}

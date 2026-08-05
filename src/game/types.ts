@@ -41,6 +41,17 @@ export interface BlockGroup {
   edu?: number;
   /** tourism jobs (venues, hotels, restaurants) — subset of jobs */
   tour?: number;
+  /** air travellers + airport staff needing ground transport per day */
+  air?: number;
+  /** regional-rail passengers transferring to/from local transit per day */
+  rail?: number;
+}
+
+/** named point of interest that generates special demand */
+export interface Poi {
+  kind: 'airport' | 'rail';
+  pt: LngLat;
+  name: string;
 }
 
 export interface RoadEdge {
@@ -70,6 +81,8 @@ export interface CityPack {
   /** synthetic water/park polygons — demo city only */
   water?: LngLat[][];
   parks?: LngLat[][];
+  /** airports and regional rail stations (special demand generators) */
+  pois?: Poi[];
 }
 
 // ---------------------------------------------------------------------------
@@ -232,6 +245,9 @@ export interface SaveGame {
   loanTaken: boolean;
   /** quarterly report card history (absent in old saves) */
   reports?: ReportCard[];
+  /** player company identity (absent in old saves) */
+  companyName?: string;
+  companyColor?: string;
   /** wall-clock ms when the save was written (absent in old saves) */
   savedAt?: number;
 }

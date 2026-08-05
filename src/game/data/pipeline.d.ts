@@ -1,6 +1,9 @@
-import type { BlockGroup, LngLat, RoadEdge } from '../types';
+import type { BlockGroup, LngLat, Poi, RoadEdge } from '../types';
 
 export declare const ROAD_CLASSES: string[];
+export declare function overpassPoiQuery(bbox: [number, number, number, number]): string;
+export declare function parsePois(overpass: { elements: unknown[] }): Poi[];
+export declare function applyPoiDemand(bgs: BlockGroup[], pois: Poi[]): void;
 export declare function overpassQuery(bbox: [number, number, number, number]): string;
 export declare function overpassScenicQuery(bbox: [number, number, number, number]): string;
 export declare function parseScenic(overpass: { elements: unknown[] }): {

@@ -13,7 +13,8 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { gunzipSync, gzipSync } from 'node:zlib';
 import {
-  buildBlockGroups, buildRoadGraph, overpassQuery, overpassScenicQuery, parseAcs,
+  applyPoiDemand, buildBlockGroups, buildRoadGraph, overpassPoiQuery, overpassQuery,
+  overpassScenicQuery, parseAcs, parsePois,
   parseRac, parseScenic, parseWac,
 } from '../src/game/data/pipeline.js';
 
@@ -281,10 +282,17 @@ async function bake(id, force) {
   } catch (e) {
     console.warn(`  water/parks fetch failed (cosmetic only): ${e.message}`);
   }
+  let pois = [];
+  try {
+    pois = parsePois(await overpass(overpassPoiQuery(meta.bbox)));
+  } catch (e) {
+    console.warn(`  airport/rail POI fetch failed (optional): ${e.message}`);
+  }
   const blockGroups = buildBlockGroups(
     features, pop, wac ? wac.jobs : null, meta.bbox, meta.center,
     wac ? { edu: wac.edu, tour: wac.tour } : undefined,
   );
+  applyPoiDemand(blockGroups, pois);
   const graph = buildRoadGraph(roadsJson, meta.bbox);
   const pack = {
     meta: { ...meta, dataSource: source },
@@ -293,6 +301,7 @@ async function bake(id, force) {
     edges: graph.edges,
     water: scenic.water,
     parks: scenic.parks,
+    pois,
   };
   const json = JSON.stringify(pack);
   const outPath = join(__dirname, '..', 'public', 'cities', `${id}.json.gz`);

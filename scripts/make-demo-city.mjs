@@ -166,6 +166,11 @@ const IND = { x: 1800, y: -1800 }; // industrial park SE (across river)
 const MALL = { x: -2000, y: -400 };
 const EASTVILLE = { x: 4800, y: 2400 }; // satellite town NE
 const WESTON = { x: -4600, y: -3400 }; // satellite town SW
+const AIRPORT = { x: 3600, y: -4200 }; // regional airport, far SE
+// regional rail: downtown terminus + a stop in each satellite town
+const RAIL_UNION = { x: 300, y: -400 };
+const RAIL_EAST = { x: 4600, y: 2200 };
+const RAIL_WEST = { x: -4400, y: -3200 };
 
 let bgSeq = 0;
 for (let cx = -CH; cx < CH; cx++) {
@@ -180,6 +185,10 @@ for (let cx = -CH; cx < CH; cx++) {
 
     const dEast = Math.hypot(cxm - EASTVILLE.x, cym - EASTVILLE.y);
     const dWest = Math.hypot(cxm - WESTON.x, cym - WESTON.y);
+    const dAir = Math.hypot(cxm - AIRPORT.x, cym - AIRPORT.y);
+    const dRailU = Math.hypot(cxm - RAIL_UNION.x, cym - RAIL_UNION.y);
+    const dRailE = Math.hypot(cxm - RAIL_EAST.x, cym - RAIL_EAST.y);
+    const dRailW = Math.hypot(cxm - RAIL_WEST.x, cym - RAIL_WEST.y);
     let popDens =
       5200 * Math.exp(-dDowntown / 1500) +
       2600 * Math.exp(-dUni / 900) +
@@ -188,6 +197,7 @@ for (let cx = -CH; cx < CH; cx++) {
       240 * Math.exp(-dDowntown / 4200); // thin suburban carpet
     popDens *= 0.75 + rnd() * 0.5;
     if (dInd < 700) popDens *= 0.15; // nobody lives in the industrial park
+    if (dAir < 700) popDens *= 0.1; // nobody lives on the runway either
     let pop = popDens * 0.16; // cell is 0.16 km²
 
     let jobs =
@@ -213,6 +223,17 @@ for (let cx = -CH; cx < CH; cx++) {
     if (Math.abs(cxm) < 900 && Math.abs(cym) < 2400) tour += 500; // riverfront strip
     tour *= 0.7 + rnd() * 0.6;
 
+    // special generators: flyers at the terminal, rail riders at stations
+    let airDem = 5200 * Math.exp(-dAir / 330);
+    airDem *= 0.8 + rnd() * 0.4;
+    let railDem =
+      2600 * Math.exp(-dRailU / 240) +
+      1200 * Math.exp(-dRailE / 210) +
+      1000 * Math.exp(-dRailW / 210);
+    railDem *= 0.8 + rnd() * 0.4;
+    // travellers attract bus trips the way workplaces do
+    jobs += airDem * 0.5 + railDem * 0.35;
+
     if (pop < 60 && jobs < 60) continue;
     const ring = [P(x0, y0), P(x0 + CELL, y0), P(x0 + CELL, y0 + CELL), P(x0, y0 + CELL)];
     blockGroups.push({
@@ -223,6 +244,8 @@ for (let cx = -CH; cx < CH; cx++) {
       jobs,
       edu: Math.round(edu * 0.16),
       tour: Math.round(tour * 0.16),
+      air: Math.round(airDem * 0.16),
+      rail: Math.round(railDem * 0.16),
       areaKm2: 0.16,
     });
   }
@@ -305,6 +328,12 @@ const pack = {
   buildings,
   water,
   parks,
+  pois: [
+    { kind: 'airport', pt: P(AIRPORT.x, AIRPORT.y), name: 'Riverton Regional Airport' },
+    { kind: 'rail', pt: P(RAIL_UNION.x, RAIL_UNION.y), name: 'Union Station' },
+    { kind: 'rail', pt: P(RAIL_EAST.x, RAIL_EAST.y), name: 'Eastville Station' },
+    { kind: 'rail', pt: P(RAIL_WEST.x, RAIL_WEST.y), name: 'Weston Station' },
+  ],
 };
 
 const outPath = join(__dirname, '..', 'public', 'cities', 'demo.json');

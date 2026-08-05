@@ -1,8 +1,8 @@
-import type { CityMeta, CityPack } from '../types';
+import type { CityMeta, CityPack, Poi } from '../types';
 import { idbGetPack, idbPutPack } from './idb';
 import {
-  buildBlockGroups, buildRoadGraph, overpassQuery, overpassScenicQuery, parseAcs,
-  parseRac, parseScenic, parseWac,
+  applyPoiDemand, buildBlockGroups, buildRoadGraph, overpassPoiQuery, overpassQuery,
+  overpassScenicQuery, parseAcs, parsePois, parseRac, parseScenic, parseWac,
 } from './pipeline';
 import { generateBuildings } from './proceduralBuildings';
 
@@ -89,11 +89,20 @@ export async function loadCity(meta: CityMeta, progress: ProgressFn): Promise<Ci
     // cosmetic only — the game works without water/park polygons
   }
 
+  progress(`Downloading ${meta.name}…`, 'airports and rail stations (OpenStreetMap)');
+  let pois: Poi[] = [];
+  try {
+    pois = parsePois(await fetchOverpass(overpassPoiQuery(meta.bbox)));
+  } catch {
+    // optional flavor demand — the game works without it
+  }
+
   progress(`Building ${meta.name}…`, 'assembling city pack');
   const blockGroups = buildBlockGroups(
     features, popByBg, wac ? wac.jobs : null, meta.bbox, meta.center,
     wac ? { edu: wac.edu, tour: wac.tour } : undefined,
   );
+  applyPoiDemand(blockGroups, pois);
   const graph = buildRoadGraph(overpass, meta.bbox);
   if (blockGroups.length < 10) {
     throw new Error('Census data came back empty — try again, or use npm run bake.');
@@ -109,6 +118,7 @@ export async function loadCity(meta: CityMeta, progress: ProgressFn): Promise<Ci
     edges: graph.edges,
     water: scenic.water,
     parks: scenic.parks,
+    pois,
   };
   progress(`Saving ${meta.name}…`, 'caching locally — future launches are offline');
   await idbPutPack(meta.id, pack);

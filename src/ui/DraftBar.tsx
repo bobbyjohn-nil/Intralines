@@ -40,7 +40,7 @@ export function DraftBar() {
   if (tool === 'depot-place') {
     return (
       <div className="draftbar">
-        <span>Click near a street to place your depot</span>
+        <span>Click industrial land near a street — zoning bars depots from residential and dense areas</span>
         <button className="btn" onClick={() => setTool('select')}>
           Cancel
         </button>

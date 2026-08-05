@@ -895,6 +895,121 @@ button.chip:hover {
   border-radius: 6px;
   padding: 1px 6px;
   pointer-events: none;
+  /* names only show while the Depot panel is open — quieter map otherwise */
+  display: none;
+}
+
+.show-depot-names .depot-marker .depot-name {
+  display: block;
+}
+
+/* ---------- company founding screen ---------- */
+
+.founding {
+  height: 100%;
+  display: grid;
+  place-items: center;
+  background: #f3edda;
+  padding: 20px;
+}
+
+.founding-card {
+  width: min(440px, 92vw);
+  background: #fffdf6;
+  border: 1px solid #d0c7ae;
+  border-radius: 16px;
+  padding: 26px 28px;
+  box-shadow: 0 12px 40px rgba(60, 50, 25, 0.14);
+}
+
+.founding-card h1 {
+  margin: 6px 0 4px;
+  font-size: 24px;
+}
+
+.founding-bus svg {
+  width: 74px;
+  height: auto;
+}
+
+.founding-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  opacity: 0.6;
+  margin: 16px 0 6px;
+}
+
+.founding-name {
+  width: 100%;
+  font-size: 16px;
+}
+
+.founding-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.swatch {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+  padding: 0;
+}
+
+.swatch.on {
+  border-color: #2c2a24;
+  box-shadow: 0 0 0 2px #fffdf6 inset;
+}
+
+.founding-actions {
+  margin-top: 20px;
+  justify-content: flex-end;
+}
+
+.chip.company {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.brand-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex: none;
+  border: 1px solid rgba(0, 0, 0, 0.25);
+}
+
+/* ---------- airport / rail landmarks ---------- */
+
+.poi-marker {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 2px solid #fffdf6;
+  box-shadow: 0 2px 7px rgba(50, 40, 20, 0.35);
+  color: #fff;
+  pointer-events: auto;
+}
+
+.poi-airport {
+  background: #d6438f;
+}
+
+.poi-rail {
+  background: #8a5a2c;
 }
 
 .depot-name-input {

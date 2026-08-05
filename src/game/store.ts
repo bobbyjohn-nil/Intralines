@@ -66,13 +66,16 @@ export interface GameState {
   reports: ReportCard[];
   /** hire a driver automatically with every bus purchase */
   autoHireDriver: boolean;
+  /** empty until the player founds their company (name + brand color) */
+  companyName: string;
+  companyColor: string;
 
   stats: NetworkStats | null;
   tool: Tool;
   draft: DraftLine | null;
   selectedLineId: string | null;
   panel: Panel;
-  heatmap: 'off' | 'pop' | 'jobs' | 'tour' | 'edu' | 'modes';
+  heatmap: 'off' | 'pop' | 'jobs' | 'tour' | 'edu' | 'air' | 'rail' | 'modes';
   /** traffic forecast overlay: color roads by congestion at trafficHour */
   trafficView: boolean;
   trafficHour: number; // 0..23
@@ -98,7 +101,7 @@ export interface GameState {
   togglePause: () => void;
   setTool: (t: Tool) => void;
   setPanel: (p: Panel) => void;
-  setHeatmap: (h: 'off' | 'pop' | 'jobs' | 'tour' | 'edu' | 'modes') => void;
+  setHeatmap: (h: 'off' | 'pop' | 'jobs' | 'tour' | 'edu' | 'air' | 'rail' | 'modes') => void;
   setTrafficView: (on: boolean) => void;
   setTrafficHour: (h: number) => void;
   toggleBasemap: () => void;
@@ -117,6 +120,7 @@ export interface GameState {
   refurbishFleet: (modelId: string) => void;
   upgradeFleetModel: (modelId: string) => void;
   setAutoHireDriver: (v: boolean) => void;
+  foundCompany: (name: string, color: string) => void;
   hire: (role: keyof Staff) => void;
   fire: (role: keyof Staff) => void;
   buildDepot: (pt: LngLat) => void;
@@ -213,6 +217,37 @@ export function gradeOf(score: number): string {
 }
 
 const clamp100 = (v: number) => Math.max(0, Math.min(100, Math.round(v)));
+
+// City zoning: depots may only go on industrial-style land — workplace-heavy
+// and well below the city's typical residential density. Median cached per
+// city pack.
+let zoneCity: string | null = null;
+let zoneMedianPopD = 0;
+
+/** does the land around this point pass depot zoning? */
+function depotZoningOk(pack: CityPack, pt: LngLat): boolean {
+  if (zoneCity !== pack.meta.id) {
+    const ds = pack.blockGroups
+      .filter((b) => b.pop > 0)
+      .map((b) => b.pop / Math.max(b.areaKm2, 0.02))
+      .sort((a, b) => a - b);
+    zoneMedianPopD = ds[Math.floor(ds.length / 2)] ?? 0;
+    zoneCity = pack.meta.id;
+  }
+  const cosLat = Math.cos((pack.meta.center[1] * Math.PI) / 180);
+  let best: CityPack['blockGroups'][number] | null = null;
+  let bestM = Infinity;
+  for (const bg of pack.blockGroups) {
+    const d = fastDistM(bg.centroid, pt, cosLat);
+    if (d < bestM) {
+      bestM = d;
+      best = bg;
+    }
+  }
+  if (!best || bestM > 900) return false; // unzoned wilderness
+  const popD = best.pop / Math.max(best.areaKm2, 0.02);
+  return best.jobs > best.pop && popD < zoneMedianPopD;
+}
 
 /** the Transit Authority's quarterly grading rubric */
 function buildReportCard(s: GameState, quarter: number): ReportCard {
@@ -468,6 +503,8 @@ export const useGame = create<GameState>((set, get) => {
     autoHireDriver:
       typeof localStorage !== 'undefined' &&
       localStorage.getItem('intralines-auto-driver') === '1',
+    companyName: '',
+    companyColor: LINE_COLORS[0],
 
     stats: null,
     tool: 'select',
@@ -560,6 +597,8 @@ export const useGame = create<GameState>((set, get) => {
               totalRidersServed: sv.totalRidersServed,
               loanTaken: sv.loanTaken,
               reports: sv.reports ?? [],
+              companyName: sv.companyName ?? '',
+              companyColor: sv.companyColor ?? LINE_COLORS[0],
             };
             lineSeq = sv.lines.length + 1;
             stopSeq = sv.stops.length + 1;
@@ -588,6 +627,8 @@ export const useGame = create<GameState>((set, get) => {
         totalRidersServed: 0,
         loanTaken: false,
         reports: [],
+        companyName: '',
+        companyColor: LINE_COLORS[0],
         stats: null,
         tool: 'select',
         draft: null,
@@ -615,7 +656,8 @@ export const useGame = create<GameState>((set, get) => {
 
     tick: (realDtSec) => {
       const s = get();
-      if (s.phase !== 'playing' || s.paused) return;
+      // time waits for the founding papers: no ticking before the company exists
+      if (s.phase !== 'playing' || s.paused || !s.companyName) return;
       const rate = SPEEDS[s.speedIdx].gameMinPerSec;
       const dtMin = realDtSec * rate;
       const newClock = s.clockMin + dtMin;
@@ -1026,7 +1068,11 @@ export const useGame = create<GameState>((set, get) => {
       });
       const cum = cumulativeDist(path, cosLat);
       const id = `L${++lineSeq}`;
-      const color = LINE_COLORS[(lineSeq - 1) % LINE_COLORS.length];
+      // the first line wears the company's brand color
+      const color =
+        s.lines.length === 0 && s.companyColor
+          ? s.companyColor
+          : LINE_COLORS[(lineSeq - 1) % LINE_COLORS.length];
       const defaultModel =
         fleetOwned(s.fleet, 'citybus') - fleetAssigned(s.lines, 'citybus') > 0
           ? 'citybus'
@@ -1238,6 +1284,13 @@ export const useGame = create<GameState>((set, get) => {
       set({ autoHireDriver: v });
     },
 
+    foundCompany: (name, color) => {
+      const clean = name.trim().slice(0, 32) || 'Intralines Transit';
+      set({ companyName: clean, companyColor: color });
+      get().notify(`${clean} is open for business! Place your first depot.`, 'good');
+      get().saveGame();
+    },
+
     hire: (role) => {
       const s = get();
       set({ staff: { ...s.staff, [role]: s.staff[role] + 1 } });
@@ -1271,6 +1324,14 @@ export const useGame = create<GameState>((set, get) => {
       const node = s.graph.nearestNode(pt, 400);
       if (node === null) {
         get().notify('The depot needs street access — click near a road.', 'bad');
+        return;
+      }
+      if (!depotZoningOk(s.pack, pt)) {
+        get().notify(
+          'Zoning says no — depots only go on industrial land: workplace-heavy, ' +
+            'low-density areas (think the industrial park or out by the airport).',
+          'bad',
+        );
         return;
       }
       const at = s.graph.pack.nodes[node];
@@ -1478,6 +1539,8 @@ export const useGame = create<GameState>((set, get) => {
         totalRidersServed: s.totalRidersServed,
         loanTaken: s.loanTaken,
         reports: s.reports,
+        companyName: s.companyName,
+        companyColor: s.companyColor,
         savedAt: Date.now(),
       };
       try {

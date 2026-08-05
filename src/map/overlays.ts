@@ -9,7 +9,7 @@ const EMPTY = { type: 'FeatureCollection', features: [] } as GeoJSON.FeatureColl
 
 import type { ExpressionSpecification } from 'maplibre-gl';
 
-export type HeatMode = 'pop' | 'jobs' | 'tour' | 'edu' | 'modes';
+export type HeatMode = 'pop' | 'jobs' | 'tour' | 'edu' | 'air' | 'rail' | 'modes';
 
 /** dot colors for the travel-mode view (dominant mode per block group) */
 export const MODE_COLORS: Record<string, { fill: string; stroke: string; label: string }> = {
@@ -23,13 +23,16 @@ export const MODE_COLORS: Record<string, { fill: string; stroke: string; label: 
  * Demand dot colors: translucent fill, crisp solid outline — sharp-edged
  * circles instead of fuzzy heat blobs, so even a lone pocket of demand out
  * past the city limits reads clearly.
- * purple = residents, teal = jobs, amber = tourism, blue = education.
+ * purple = residents, teal = jobs, amber = tourism, blue = education,
+ * pink = airport, brown = regional rail.
  */
 const HEAT_COLORS: Record<Exclude<HeatMode, 'modes'>, { fill: string; stroke: string }> = {
   pop: { fill: '#7a54e0', stroke: '#5230b8' },
   jobs: { fill: '#0e7a92', stroke: '#075a6e' },
   tour: { fill: '#db742c', stroke: '#a8480e' },
   edu: { fill: '#2f6fd0', stroke: '#1a4b9e' },
+  air: { fill: '#d6438f', stroke: '#a02465' },
+  rail: { fill: '#8a5a2c', stroke: '#61390f' },
 };
 
 /**
@@ -326,6 +329,8 @@ export function updateHeatmap(
     mode === 'pop' ? bg.pop
     : mode === 'jobs' ? bg.jobs
     : mode === 'tour' ? bg.tour ?? 0
+    : mode === 'air' ? bg.air ?? 0
+    : mode === 'rail' ? bg.rail ?? 0
     : bg.edu ?? 0;
   const dens = pack.blockGroups.map((bg) => value(bg) / Math.max(bg.areaKm2, 0.02));
   const positive = dens.filter((d) => d > 0).sort((a, b) => a - b);
