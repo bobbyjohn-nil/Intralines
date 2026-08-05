@@ -494,7 +494,17 @@ export const useGame = create<GameState>((set, get) => {
     openCity: (pack) => {
       worker?.terminate();
       worker = makeWorker(pack, (stats) => {
+        const prevCrowded = get().stats?.crowdedStops?.length ?? 0;
         set({ stats });
+        const nowCrowded = stats.crowdedStops?.length ?? 0;
+        if (nowCrowded > prevCrowded) {
+          get().notify(
+            nowCrowded === 1
+              ? 'A stop is overcrowded — riders are spilling off the curb. Upgrade it in the route editor.'
+              : `${nowCrowded} stops are overcrowded — upgrade them or spread the load.`,
+            'bad',
+          );
+        }
       });
       const graph = new RoadGraph(pack);
       const saved = localStorage.getItem(SAVE_KEY_PREFIX + pack.meta.id);

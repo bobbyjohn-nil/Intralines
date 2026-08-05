@@ -163,6 +163,8 @@ export interface NetworkStats {
   perLine: LineStats[];
   /** commuters by chosen travel mode per block group (same order as pack) */
   bgModes?: { bus: number; car: number; walk: number; bike: number }[];
+  /** stops handling more daily boardings than their tier comfortably fits */
+  crowdedStops?: { stopId: string; load: number; cap: number }[];
 }
 
 export interface Depot {

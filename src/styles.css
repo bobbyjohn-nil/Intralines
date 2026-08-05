@@ -1064,6 +1064,18 @@ button.chip:hover {
   font-size: 12px;
 }
 
+.crowd-badge {
+  background: #e5484d;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 1px 6px;
+  border-radius: 6px;
+  white-space: nowrap;
+}
+
 /* ---------- menu & loading ---------- */
 
 .menu {

@@ -14,6 +14,7 @@ import {
   MODE_TAU,
   CAPTIVE_SHARE,
   REFUEL_MIN,
+  STOP_TIER_CAPACITY,
   STOP_TIER_WALK_BONUS,
   SUBSIDY_PER_RIDER,
   TRANSFER_PENALTY_MIN,
@@ -416,7 +417,8 @@ function computeNetwork(msg: NetworkMsg) {
     const tripsPerHour = 60 / lc.effAt(peakHour);
     const offered = tripsPerHour * l.capacity * 2;
     const loadFactor = offered > 0 ? peakRiders / offered : 0;
-    if (loadFactor > 1) daily *= Math.sqrt(1 / loadFactor); // riders give up
+    // crush-loaded buses shed riders hard — people won't board sardine cans
+    if (loadFactor > 1) daily *= Math.pow(1 / loadFactor, 0.65);
 
     const hourly = HOURLY_PROFILE.map((p, h) =>
       h >= l.firstHour && h < l.lastHour ? (daily * p) / windowShare : 0,
@@ -465,6 +467,45 @@ function computeNetwork(msg: NetworkMsg) {
     };
   });
 
+  // station crowding: each boarding queues at a stop; a stop handling more
+  // daily boardings than its tier comfortably fits turns riders away and
+  // sours the ones who stay
+  const stopLoad = new Float64Array(stops.length);
+  lineCalc.forEach((lc, li) => {
+    if (!lc.stopsOnLine.length) return;
+    const share = perLine[li].dailyBoardings / lc.stopsOnLine.length;
+    for (const si of lc.stopsOnLine) stopLoad[si] += share;
+  });
+  const capOf = (si: number) => STOP_TIER_CAPACITY[stops[si].tier ?? 1] ?? 250;
+  lineCalc.forEach((lc, li) => {
+    if (!lc.stopsOnLine.length) return;
+    let mult = 0;
+    for (const si of lc.stopsOnLine) {
+      mult += Math.min(1, capOf(si) / Math.max(stopLoad[si], 1));
+    }
+    mult = Math.max(0.75, mult / lc.stopsOnLine.length);
+    if (mult < 1) {
+      const p = perLine[li];
+      p.dailyBoardings = Math.round(p.dailyBoardings * mult);
+      p.dailyRevenue *= mult;
+      p.hourly = p.hourly.map((v) => v * mult);
+    }
+  });
+  const crowdedStops: { stopId: string; load: number; cap: number }[] = [];
+  let stopOverflow = 0;
+  let stopBoardTotal = 0;
+  for (let si = 0; si < stops.length; si++) {
+    if (stopLoad[si] <= 0) continue;
+    stopBoardTotal += stopLoad[si];
+    const cap = capOf(si);
+    if (stopLoad[si] > cap) {
+      stopOverflow += stopLoad[si] - cap;
+      crowdedStops.push({ stopId: stops[si].id, load: Math.round(stopLoad[si]), cap });
+    }
+  }
+  const stopCrowdPen =
+    stopBoardTotal > 0 ? Math.min(12, (stopOverflow / stopBoardTotal) * 40) : 0;
+
   // coverage: residents within walk of any served stop
   let covered = 0;
   let totalPop = 0;
@@ -495,7 +536,8 @@ function computeNetwork(msg: NetworkMsg) {
       coveragePct * 0.45 +
         (1 - Math.min(avgWait, 20) / 20) * 35 +
         (1 - Math.min(avgLoad, 1.4) / 1.4) * 20 +
-        comfort * 6,
+        comfort * 6 -
+        stopCrowdPen,
     ),
   );
 
@@ -504,6 +546,7 @@ function computeNetwork(msg: NetworkMsg) {
     totalDailyRiders: totalDaily,
     satisfaction,
     perLine,
+    crowdedStops,
     bgModes: bgModes.map((m) => ({
       bus: Math.round(m.bus),
       car: Math.round(m.car),

@@ -15,6 +15,16 @@ export interface LogEntry {
 
 export const CHANGELOG: LogEntry[] = [
   {
+    version: '1.10',
+    date: 'Aug 5, 2026',
+    title: 'Standing room only',
+    items: [
+      'Stations can overcrowd: every stop tier has a comfortable daily capacity (sign stop 250, shelter 700, station 1,600 boardings). Push past it and riders queue off the curb — some walk away, satisfaction sinks, and the route editor flags each offender with a red "Crowded" badge and its actual load. Upgrading the stop is the fix.',
+      'Bus overcrowding bites harder: crush-loaded rush services now shed noticeably more would-be riders, and the line panel spells out how far over capacity you are and what to do about it.',
+      "You'll get a notice the moment any stop tips into overcrowding.",
+    ],
+  },
+  {
     version: '1.9',
     date: 'Aug 5, 2026',
     title: 'Timetables, gas and gridlock',

@@ -10,7 +10,7 @@ import {
   DRIVER_WAGE_PER_HOUR, HEADWAY_CHOICES, LOAN_AMOUNT, LOAN_FEE, LOAN_PAYOFF,
   DAYS_PER_QUARTER, LOAN_INTEREST_PER_DAY, MECHANIC_WAGE_PER_DAY, nextDepotCost,
   quarterLabel, REFUEL_MIN, REFURB_COST_SHARE,
-  STOP_COST, STOP_TIER_NAMES,
+  STOP_COST, STOP_TIER_CAPACITY, STOP_TIER_NAMES,
   STOP_UPGRADE_COST, SUBSIDY_PER_RIDER, WASH_BAY_COST, WORKSHOP_COST, wearLabel,
 } from '../game/constants';
 import { fmtInt, fmtMoney } from './format';
@@ -466,7 +466,11 @@ function LineEditPanel() {
         </p>
       )}
       {st && st.peakLoadFactor > 1 && (
-        <p className="warn">Overcrowded at rush hour — riders are being left behind.</p>
+        <p className="warn">
+          Buses run at {Math.round(st.peakLoadFactor * 100)}% of capacity at rush
+          hour — riders are left at the curb and the ones aboard are miserable.
+          Add buses, tighten the rush-hour headway or run bigger models.
+        </p>
       )}
 
       <div className="btn-row">
@@ -495,17 +499,28 @@ function StopList({ lineId, stopIds }: { lineId: string; stopIds: string[] }) {
   const cash = useGame((s) => s.cash);
   const tool = useGame((s) => s.tool);
   const moveStopId = useGame((s) => s.moveStopId);
+  const crowdedStops = useGame((s) => s.stats?.crowdedStops);
   const upgradeStop = useGame((s) => s.upgradeStop);
   const removeStopFromLine = useGame((s) => s.removeStopFromLine);
   const requestMoveStop = useGame((s) => s.requestMoveStop);
   const setTool = useGame((s) => s.setTool);
   const editing = tool === 'route-edit';
+  const crowdedById = new Map((crowdedStops ?? []).map((c) => [c.stopId, c]));
+  const crowdedHere = stopIds.filter((sid) => crowdedById.has(sid)).length;
 
   return (
     <div className="field">
       <label>
         Route <small className="dim">(upgrades pull riders from further out)</small>
       </label>
+      {crowdedHere > 0 && (
+        <p className="warn">
+          {crowdedHere} stop{crowdedHere === 1 ? ' is' : 's are'} overcrowded —
+          riders queue past the curb, some walk away. Upgrades add capacity
+          (sign {STOP_TIER_CAPACITY[1]}, shelter {STOP_TIER_CAPACITY[2]}, station{' '}
+          {STOP_TIER_CAPACITY[3]} boardings/day).
+        </p>
+      )}
       <div className="stop-list">
         {stopIds.map((sid, i) => {
           const st = stops.find((x) => x.id === sid);
@@ -514,11 +529,23 @@ function StopList({ lineId, stopIds }: { lineId: string; stopIds: string[] }) {
           const next = tier + 1;
           const cost = STOP_UPGRADE_COST[next];
           const movingThis = moveStopId === sid;
+          const crowd = crowdedById.get(sid);
           return (
             <div key={sid} className={`stop-row ${movingThis ? 'moving' : ''}`}>
               <span className="stop-row-idx">{i + 1}</span>
               <span className="stop-row-name" title={st.name}>{st.name}</span>
-              <span className="dim">{STOP_TIER_NAMES[tier]}</span>
+              {crowd ? (
+                <span
+                  className="crowd-badge"
+                  title={`≈${fmtInt(crowd.load)} boardings/day — a ${
+                    STOP_TIER_NAMES[tier]?.toLowerCase() ?? 'stop'
+                  } comfortably handles ${fmtInt(crowd.cap)}`}
+                >
+                  Crowded
+                </span>
+              ) : (
+                <span className="dim">{STOP_TIER_NAMES[tier]}</span>
+              )}
               {cost ? (
                 <button
                   className="btn tiny"
