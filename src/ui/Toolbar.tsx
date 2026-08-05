@@ -4,7 +4,7 @@ import { useGame } from '../game/store';
 import type { Panel } from '../game/store';
 import {
   IconBus, IconChart, IconDepot, IconHeat, IconHelp, IconMapFold,
-  IconPeople, IconPlus, IconPointer, IconRoute,
+  IconPeople, IconPlus, IconPointer, IconReport, IconRoute,
 } from './icons';
 
 /** dropdown for the extra demand layers (tourism, education) */
@@ -198,6 +198,14 @@ export function Toolbar() {
       >
         <IconChart />
         <span>Finance</span>
+      </button>
+      <button
+        className={panel === 'report' ? 'on' : ''}
+        onClick={() => togglePanel('report')}
+        title="Quarterly Transit Authority report cards"
+      >
+        <IconReport />
+        <span>Report</span>
       </button>
       <button
         className={panel === 'help' ? 'on' : ''}

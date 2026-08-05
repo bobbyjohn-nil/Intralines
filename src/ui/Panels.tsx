@@ -1,16 +1,18 @@
 import { useRef } from 'react';
 import {
-  busModel, depotCapacity, driversNeeded, fleetAssigned, fleetOwned, fleetTotal, useGame,
+  busModel, depotCapacity, driversNeeded, fleetAssigned, fleetOwned, fleetTotal,
+  gradeOf, useGame,
 } from '../game/store';
 import {
   BUSES_PER_MECHANIC, BUS_MODELS, CHARGERS_COST, DEPOT_CAPACITY, DEPOT_COST,
-  DEPOT_UPGRADE_COST, MAX_DEPOTS,
+  DEPOT_UPGRADE_COST, FLEET_TIER_NAMES, FLEET_UPGRADE_COST_SHARE, MAX_DEPOTS,
   DRIVER_WAGE_PER_HOUR, HEADWAY_CHOICES, LOAN_AMOUNT, LOAN_FEE, LOAN_PAYOFF,
-  LOAN_WEEKLY_INTEREST, MECHANIC_WAGE_PER_DAY, STOP_COST, STOP_TIER_NAMES,
-  STOP_UPGRADE_COST, SUBSIDY_PER_RIDER, WASH_BAY_COST, WORKSHOP_COST,
+  LOAN_WEEKLY_INTEREST, MECHANIC_WAGE_PER_DAY, QUARTER_WEEKS, REFURB_COST_SHARE,
+  STOP_COST, STOP_TIER_NAMES,
+  STOP_UPGRADE_COST, SUBSIDY_PER_RIDER, WASH_BAY_COST, WORKSHOP_COST, wearLabel,
 } from '../game/constants';
 import { fmtInt, fmtMoney } from './format';
-import type { LineStats } from '../game/types';
+import type { FleetEntry, LineStats } from '../game/types';
 import {
   BusSide, IconBank, IconClose, IconDepot, IconDownload, IconIdBadge, IconLock,
   IconPlus, IconUpload, IconWrench,
@@ -27,6 +29,7 @@ export function PanelHost() {
       {panel === 'staff' && <StaffPanel />}
       {panel === 'depot' && <DepotPanel />}
       {panel === 'finance' && <FinancePanel />}
+      {panel === 'report' && <ReportPanel />}
       {panel === 'help' && <HelpPanel />}
       {panel === 'map-options' && <MapOptionsPanel />}
     </div>
@@ -487,6 +490,10 @@ function FleetPanel() {
   const riders = useGame((s) => s.totalRidersServed);
   const buyBus = useGame((s) => s.buyBus);
   const sellBus = useGame((s) => s.sellBus);
+  const refurbishFleet = useGame((s) => s.refurbishFleet);
+  const upgradeFleetModel = useGame((s) => s.upgradeFleetModel);
+  const autoHireDriver = useGame((s) => s.autoHireDriver);
+  const setAutoHireDriver = useGame((s) => s.setAutoHireDriver);
 
   const cap = depotCapacity(depots);
   return (
@@ -498,6 +505,17 @@ function FleetPanel() {
           {fleetTotal(fleet)} / {cap || '—'}
         </b>
       </div>
+      <label className="toggle-row">
+        <input
+          type="checkbox"
+          checked={autoHireDriver}
+          onChange={(e) => setAutoHireDriver(e.target.checked)}
+        />
+        <span>
+          Hire a driver with every bus{' '}
+          <small className="dim">(${DRIVER_WAGE_PER_HOUR}/h while driving)</small>
+        </span>
+      </label>
       {!depots.length && (
         <p className="warn">Build a depot first — use “Place depot” in the bottom bar.</p>
       )}
@@ -505,6 +523,7 @@ function FleetPanel() {
         {BUS_MODELS.map((m) => {
           const owned = fleetOwned(fleet, m.id);
           const assigned = fleetAssigned(lines, m.id);
+          const entry = fleet.find((f) => f.modelId === m.id);
           const locked = riders < m.unlockRiders;
           const chargerBlock = m.needsCharger && !depots.some((d) => d.chargers);
           const depotFull = depots.length > 0 && fleetTotal(fleet) >= cap;
@@ -552,19 +571,146 @@ function FleetPanel() {
                       disabled={owned - assigned <= 0}
                       onClick={() => sellBus(m.id)}
                     >
-                      Sell ({fmtMoney(m.price * 0.5)})
+                      Sell ({fmtMoney(m.price * 0.5 * (1 - (entry?.wear ?? 0) / 250))})
                     </button>
                     <span className="dim">
                       {owned} owned · {assigned} on lines
                     </span>
                   </div>
                   {blocker && <p className="blocker">{blocker}</p>}
+                  {entry && <FleetCondition entry={entry} />}
                 </>
               )}
             </div>
           );
         })}
       </div>
+    </>
+  );
+}
+
+/** wear gauge + refurbish / mark upgrade controls for one owned model */
+function FleetCondition({ entry }: { entry: FleetEntry }) {
+  const cash = useGame((s) => s.cash);
+  const refurbishFleet = useGame((s) => s.refurbishFleet);
+  const upgradeFleetModel = useGame((s) => s.upgradeFleetModel);
+  const m = busModel(entry.modelId);
+  const wear = Math.round(entry.wear);
+  const refurbCost = Math.max(
+    1000,
+    Math.round(entry.count * m.price * REFURB_COST_SHARE * (entry.wear / 100)),
+  );
+  const upShare = FLEET_UPGRADE_COST_SHARE[entry.tier + 1];
+  const upCost = upShare ? Math.round(entry.count * m.price * upShare) : 0;
+  const band = wear < 25 ? 'good' : wear < 60 ? 'mid' : 'bad';
+  return (
+    <div className="fleet-cond">
+      <div className="wear-row">
+        <span className="dim">{FLEET_TIER_NAMES[entry.tier]} · Wear</span>
+        <span className="wear-bar">
+          <i className={band} style={{ width: `${Math.max(wear, 2)}%` }} />
+        </span>
+        <b>
+          {wear}% · {wearLabel(entry.wear)}
+        </b>
+      </div>
+      <div className="btn-row">
+        <button
+          className="btn"
+          disabled={entry.wear < 5 || cash < refurbCost}
+          title={
+            entry.wear < 5
+              ? 'These buses are basically new.'
+              : `Reset wear to 0% across all ${entry.count} ${m.short}s`
+          }
+          onClick={() => refurbishFleet(entry.modelId)}
+        >
+          <IconWrench size={13} /> Refurbish ({fmtMoney(refurbCost)})
+        </button>
+        {entry.tier < 3 && (
+          <button
+            className="btn"
+            disabled={cash < upCost}
+            title={`+10% seats and cheaper running costs for every ${m.short}, current and future`}
+            onClick={() => upgradeFleetModel(entry.modelId)}
+          >
+            Upgrade to {FLEET_TIER_NAMES[entry.tier + 1]} ({fmtMoney(upCost)})
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+
+function ReportPanel() {
+  const reports = useGame((s) => s.reports);
+
+  if (!reports.length) {
+    return (
+      <>
+        <PanelTitle title="Report card" />
+        <p className="hint">
+          The Transit Authority inspects your network every {QUARTER_WEEKS} weeks (one
+          quarter) and grades network coverage, connectability, passenger happiness,
+          staff happiness, safety, reliability and environment.
+        </p>
+        <p className="hint">
+          Good marks earn a government grant; a failing network draws a
+          non-compliance fee. Your first card arrives at the end of the quarter.
+        </p>
+      </>
+    );
+  }
+  const latest = reports[reports.length - 1];
+  const band = (v: number) => (v >= 70 ? 'good' : v >= 55 ? 'mid' : 'bad');
+  return (
+    <>
+      <PanelTitle title={`Q${latest.quarter} report card`} />
+      <div className="report-overall">
+        <span className={`grade-chip ${band(latest.overall)}`}>{gradeOf(latest.overall)}</span>
+        <div>
+          <b>Overall — {Math.round(latest.overall)}/100</b>
+          <small className="dim">
+            {latest.payout > 0
+              ? `Transit Authority grant: ${fmtMoney(latest.payout)}`
+              : latest.payout < 0
+                ? `Non-compliance fee: ${fmtMoney(-latest.payout)}`
+                : 'No grant this quarter — reach a C overall for funding.'}
+          </small>
+        </div>
+      </div>
+      <div className="list">
+        {latest.scores.map((sc) => (
+          <div key={sc.key} className="report-row">
+            <span className="report-label">{sc.label}</span>
+            <span className="score-bar">
+              <i className={band(sc.score)} style={{ width: `${Math.max(sc.score, 2)}%` }} />
+            </span>
+            <b className={`grade-sm ${band(sc.score)}`}>{gradeOf(sc.score)}</b>
+          </div>
+        ))}
+      </div>
+      {reports.length > 1 && (
+        <>
+          <p className="dim report-history-title">Past quarters</p>
+          {[...reports.slice(0, -1)].reverse().map((r) => (
+            <div key={r.quarter} className="kv">
+              <span>
+                Q{r.quarter} — {gradeOf(r.overall)} ({Math.round(r.overall)}/100)
+              </span>
+              <b className={r.payout < 0 ? 'bad' : r.payout > 0 ? 'good' : ''}>
+                {r.payout > 0
+                  ? `+${fmtMoney(r.payout)}`
+                  : r.payout < 0
+                    ? `−${fmtMoney(-r.payout)}`
+                    : '—'}
+              </b>
+            </div>
+          ))}
+        </>
+      )}
     </>
   );
 }

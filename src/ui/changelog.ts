@@ -15,6 +15,17 @@ export interface LogEntry {
 
 export const CHANGELOG: LogEntry[] = [
   {
+    version: '1.6',
+    date: 'Aug 5, 2026',
+    title: 'Under new scrutiny',
+    items: [
+      'Quarterly report cards: every 4 weeks the Transit Authority grades your network on coverage, connectability, passenger happiness, staff happiness, safety, reliability and environment. Good marks earn a grant, a failing network pays a non-compliance fee — see the new Report button in the dock.',
+      'Buses wear out: every model group has a wear rating that climbs while buses are in service (faster without enough mechanics, slower with a workshop). Worn buses cost more per km, drag your safety grade and fetch less when sold — refurbish them in the Fleet panel.',
+      'Bus upgrades: upgrade a model line to Mk II and Mk III for roughly 10–20% more seats and cheaper running costs, applied to every bus of that model you own or buy later.',
+      'New Fleet setting: "Hire a driver with every bus" automatically staffs each purchase so new buses never sit idle waiting for a driver.',
+    ],
+  },
+  {
     version: '1.5',
     date: 'Aug 5, 2026',
     title: 'Room to grow',

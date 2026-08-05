@@ -935,6 +935,135 @@ button.chip:hover {
   font-size: 13px;
 }
 
+/* ---------- fleet wear & upgrades ---------- */
+
+.toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  padding: 7px 9px;
+  margin: 2px 0 8px;
+  background: #fff;
+  border: 1px solid rgba(60, 55, 40, 0.14);
+  border-radius: 9px;
+  cursor: pointer;
+}
+
+.toggle-row input {
+  accent-color: #2c2a24;
+  width: 15px;
+  height: 15px;
+  flex: none;
+}
+
+.fleet-cond {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed rgba(60, 55, 40, 0.15);
+}
+
+.wear-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  margin-bottom: 6px;
+}
+
+.wear-row b {
+  white-space: nowrap;
+}
+
+.wear-bar,
+.score-bar {
+  flex: 1;
+  height: 8px;
+  border-radius: 5px;
+  background: rgba(60, 55, 40, 0.12);
+  overflow: hidden;
+}
+
+.wear-bar i,
+.score-bar i {
+  display: block;
+  height: 100%;
+  border-radius: 5px;
+}
+
+.wear-bar i.good { background: #2f9e44; }
+.wear-bar i.mid { background: #f08c00; }
+.wear-bar i.bad { background: #e5484d; }
+.score-bar i.good { background: #2f9e44; }
+.score-bar i.mid { background: #f08c00; }
+.score-bar i.bad { background: #e5484d; }
+
+/* ---------- quarterly report card ---------- */
+
+.report-overall {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px;
+  background: #fff;
+  border: 1px solid rgba(60, 55, 40, 0.14);
+  border-radius: 10px;
+  margin-bottom: 10px;
+}
+
+.report-overall b {
+  display: block;
+}
+
+.report-overall small {
+  display: block;
+  margin-top: 2px;
+}
+
+.grade-chip {
+  flex: none;
+  width: 46px;
+  height: 46px;
+  display: grid;
+  place-items: center;
+  font-size: 20px;
+  font-weight: 800;
+  border-radius: 10px;
+  color: #fff;
+}
+
+.grade-chip.good { background: #2f9e44; }
+.grade-chip.mid { background: #f08c00; }
+.grade-chip.bad { background: #e5484d; }
+
+.report-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  padding: 3px 0;
+}
+
+.report-label {
+  flex: none;
+  width: 148px;
+}
+
+.grade-sm {
+  flex: none;
+  width: 26px;
+  text-align: right;
+}
+
+.grade-sm.good { color: #2f9e44; }
+.grade-sm.mid { color: #b36b00; }
+.grade-sm.bad { color: #e5484d; }
+
+.report-history-title {
+  margin: 12px 0 4px;
+  font-size: 12px;
+}
+
 /* ---------- menu & loading ---------- */
 
 .menu {

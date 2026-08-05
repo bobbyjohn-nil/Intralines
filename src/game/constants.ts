@@ -39,6 +39,28 @@ export const STOP_MAX_KMH = 55;
 /** the city pays you per boarding on top of the fare (transit contracts!) */
 export const SUBSIDY_PER_RIDER = 1.6;
 
+// Fleet wear & upgrades. Buses in service grind down; worn buses cost more
+// per km and drag the safety grade. Refurbishing resets wear; upgrading a
+// model line (Mk I -> II -> III) adds capacity and trims running costs.
+export const WEAR_PER_DAY = 2.2; // full-use wear/day before modifiers
+export const WEAR_COST_PENALTY = 0.35; // +35% running cost at 100% wear
+export const REFURB_COST_SHARE = 0.12; // of list price at full wear, per bus
+export const FLEET_TIER_NAMES: Record<number, string> = { 1: 'Mk I', 2: 'Mk II', 3: 'Mk III' };
+export const FLEET_TIER_CAP: Record<number, number> = { 1: 1, 2: 1.1, 3: 1.2 };
+export const FLEET_TIER_COST: Record<number, number> = { 1: 1, 2: 0.93, 3: 0.87 };
+/** per-bus upgrade price as a share of list price, keyed by target tier */
+export const FLEET_UPGRADE_COST_SHARE: Record<number, number> = { 2: 0.15, 3: 0.22 };
+export function wearLabel(wear: number): string {
+  return wear < 25 ? 'Fresh' : wear < 50 ? 'Good' : wear < 75 ? 'Worn' : 'Ragged';
+}
+
+// Quarterly report cards: the Transit Authority grades the network every
+// 4 game weeks and pays a grant (or levies a fee) based on the overall mark.
+export const QUARTER_WEEKS = 4;
+export const QUARTER_MIN = QUARTER_WEEKS * 7 * 1440;
+export const REPORT_GRANT_PER_POINT = 1600; // $ per overall point above 55
+export const REPORT_FINE = 8_000; // flat non-compliance fee below 35 overall
+
 export const DRIVER_WAGE_PER_HOUR = 26;
 export const MECHANIC_WAGE_PER_DAY = 260;
 export const BUSES_PER_MECHANIC = 6; // short-staffed => +40% running cost

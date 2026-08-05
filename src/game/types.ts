@@ -172,6 +172,25 @@ export interface Staff {
 export interface FleetEntry {
   modelId: string;
   count: number;
+  /** average wear across this model group, 0 (fresh) .. 100 (ragged) */
+  wear: number;
+  /** upgrade tier for this model line: 1 = Mk I .. 3 = Mk III */
+  tier: number;
+}
+
+export interface ReportScore {
+  key: string;
+  label: string;
+  score: number; // 0..100
+}
+
+/** the Transit Authority's quarterly grade sheet */
+export interface ReportCard {
+  quarter: number; // 1-based
+  issuedAtMin: number;
+  scores: ReportScore[];
+  overall: number; // 0..100
+  payout: number; // grant (+) or fee (−) applied when issued
 }
 
 export type Tool =
@@ -196,6 +215,8 @@ export interface SaveGame {
   fleet: FleetEntry[];
   totalRidersServed: number;
   loanTaken: boolean;
+  /** quarterly report card history (absent in old saves) */
+  reports?: ReportCard[];
   /** wall-clock ms when the save was written (absent in old saves) */
   savedAt?: number;
 }

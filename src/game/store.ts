@@ -1,14 +1,18 @@
 import { create } from 'zustand';
 import type {
-  BusLine, CityPack, Depot, FleetEntry, LngLat, NetworkStats, SaveGame, Staff, Stop, Tool,
+  BusLine, CityPack, Depot, FleetEntry, LngLat, NetworkStats, ReportCard, ReportScore,
+  SaveGame, Staff, Stop, Tool,
 } from './types';
 import {
   BUS_MODELS, DEPOT_CAPACITY, DEPOT_COST, DEPOT_UPGRADE_COST, DEPOT_UPKEEP_PER_DAY,
-  BUSES_PER_MECHANIC, CHARGERS_COST, HEADWAY_CHOICES, LINE_COLORS, LOAN_AMOUNT, MAX_DEPOTS,
+  BUSES_PER_MECHANIC, CHARGERS_COST, FLEET_TIER_CAP, FLEET_TIER_COST, FLEET_TIER_NAMES,
+  FLEET_UPGRADE_COST_SHARE, HEADWAY_CHOICES, LINE_COLORS, LOAN_AMOUNT, MAX_DEPOTS,
   LOAN_FEE, LOAN_PAYOFF, LOAN_WEEKLY_INTEREST, MECHANIC_WAGE_PER_DAY,
-  OFFICE_OVERHEAD_PER_DAY, SAVE_KEY_PREFIX,
+  OFFICE_OVERHEAD_PER_DAY, QUARTER_MIN, REFURB_COST_SHARE, REPORT_FINE,
+  REPORT_GRANT_PER_POINT, SAVE_KEY_PREFIX,
   SAVE_VERSION, SPEEDS, START_CASH, STOP_COST, STOP_MAX_KMH, STOP_TIER_NAMES,
-  STOP_UPGRADE_COST, SUBSIDY_PER_RIDER, WASH_BAY_COST, WORKSHOP_COST,
+  STOP_UPGRADE_COST, SUBSIDY_PER_RIDER, WASH_BAY_COST, WEAR_COST_PENALTY, WEAR_PER_DAY,
+  WORKSHOP_COST,
 } from './constants';
 import { RoadGraph, cumulativeDist } from './routing';
 import { fastDistM } from './geo';
@@ -25,7 +29,7 @@ export interface DraftLine {
 
 export type Panel =
   | 'none' | 'lines' | 'line-edit' | 'fleet' | 'staff' | 'depot' | 'finance' | 'help'
-  | 'map-options';
+  | 'map-options' | 'report';
 
 export interface Notice {
   id: number;
@@ -59,6 +63,9 @@ export interface GameState {
   fleet: FleetEntry[];
   totalRidersServed: number;
   loanTaken: boolean;
+  reports: ReportCard[];
+  /** hire a driver automatically with every bus purchase */
+  autoHireDriver: boolean;
 
   stats: NetworkStats | null;
   tool: Tool;
@@ -102,6 +109,9 @@ export interface GameState {
   deleteLine: (id: string) => void;
   buyBus: (modelId: string) => void;
   sellBus: (modelId: string) => void;
+  refurbishFleet: (modelId: string) => void;
+  upgradeFleetModel: (modelId: string) => void;
+  setAutoHireDriver: (v: boolean) => void;
   hire: (role: keyof Staff) => void;
   fire: (role: keyof Staff) => void;
   buildDepot: (pt: LngLat) => void;
@@ -173,6 +183,153 @@ export function busModel(id: string) {
 /** total bus parking across every depot the player owns */
 export function depotCapacity(depots: Depot[]): number {
   return depots.reduce((sum, d) => sum + (DEPOT_CAPACITY[d.level] ?? 0), 0);
+}
+
+/** capacity / running-cost multipliers for a model group (tier + wear) */
+export function fleetPerf(
+  fleet: FleetEntry[],
+  modelId: string,
+): { capMult: number; costMult: number; wear: number; tier: number } {
+  const e = fleet.find((f) => f.modelId === modelId);
+  const tier = e?.tier ?? 1;
+  const wear = e?.wear ?? 0;
+  return {
+    capMult: FLEET_TIER_CAP[tier] ?? 1,
+    costMult: (FLEET_TIER_COST[tier] ?? 1) * (1 + (wear / 100) * WEAR_COST_PENALTY),
+    wear,
+    tier,
+  };
+}
+
+/** letter grade for a 0..100 report score */
+export function gradeOf(score: number): string {
+  return score >= 93 ? 'A+' : score >= 85 ? 'A' : score >= 78 ? 'B+' : score >= 70 ? 'B'
+    : score >= 62 ? 'C+' : score >= 55 ? 'C' : score >= 40 ? 'D' : 'F';
+}
+
+const clamp100 = (v: number) => Math.max(0, Math.min(100, Math.round(v)));
+
+/** the Transit Authority's quarterly grading rubric */
+function buildReportCard(s: GameState, quarter: number): ReportCard {
+  const activeLines = s.lines.filter((l) => l.active && l.vehicles > 0);
+
+  // Coverage — how much of the city can reach a stop
+  const coverage = clamp100(s.stats?.coveragePct ?? 0);
+
+  // Connectivity — do the lines form one network you can transfer across?
+  let connectivity = 0;
+  if (s.lines.length) {
+    const stopLines = new Map<string, string[]>();
+    for (const l of s.lines) {
+      for (const sid of l.stopIds) {
+        (stopLines.get(sid) ?? stopLines.set(sid, []).get(sid)!).push(l.id);
+      }
+    }
+    // union-find over lines that share a stop
+    const parent = new Map<string, string>(s.lines.map((l) => [l.id, l.id]));
+    const find = (x: string): string => {
+      while (parent.get(x) !== x) {
+        parent.set(x, parent.get(parent.get(x)!)!);
+        x = parent.get(x)!;
+      }
+      return x;
+    };
+    for (const ids of stopLines.values()) {
+      for (let i = 1; i < ids.length; i++) parent.set(find(ids[i]), find(ids[0]));
+    }
+    const compSize = new Map<string, number>();
+    for (const l of s.lines) {
+      const r = find(l.id);
+      compSize.set(r, (compSize.get(r) ?? 0) + 1);
+    }
+    const largest = Math.max(...compSize.values());
+    const transferStops = [...stopLines.values()].filter((ids) => ids.length >= 2).length;
+    connectivity = clamp100(
+      (largest / s.lines.length) * 60 * Math.min(1, s.lines.length / 3) +
+        Math.min(1, (transferStops / Math.max(s.stops.length, 1)) * 4) * 40,
+    );
+  }
+
+  // Passenger happiness — straight from the satisfaction model
+  const passengers = clamp100(s.stats?.satisfaction ?? 0);
+
+  // Staff happiness — shortages mean overworked crews
+  const needD = driversNeeded(s.lines);
+  const needM = Math.ceil(fleetTotal(s.fleet) / BUSES_PER_MECHANIC);
+  let staff = 100;
+  if (needD === 0 && needM === 0) staff = 60; // nobody works here yet
+  if (needD > 0 && s.staff.drivers < needD) staff -= 55 * ((needD - s.staff.drivers) / needD);
+  if (needM > 0 && s.staff.mechanics < needM) staff -= 45 * ((needM - s.staff.mechanics) / needM);
+  staff = clamp100(staff);
+
+  // Safety — worn buses and missing mechanics are how accidents happen
+  const total = fleetTotal(s.fleet);
+  let safety = 60; // no fleet: nothing on the road to be unsafe
+  if (total > 0) {
+    const avgWear = s.fleet.reduce((sum, f) => sum + f.wear * f.count, 0) / total;
+    safety = 100 - avgWear * 0.65;
+    if (needM > 0 && s.staff.mechanics < needM) {
+      safety -= 25 * ((needM - s.staff.mechanics) / needM);
+    }
+  }
+  safety = clamp100(safety);
+
+  // Reliability — are scheduled headways actually being run?
+  let reliability = 0;
+  if (activeLines.length && s.stats) {
+    let sum = 0;
+    let n = 0;
+    for (const pl of s.stats.perLine) {
+      const l = activeLines.find((x) => x.id === pl.lineId);
+      if (!l || pl.headwayEffMin <= 0) continue;
+      sum += Math.min(1, l.headwayMin / pl.headwayEffMin);
+      n++;
+    }
+    reliability = n ? clamp100((sum / n) * 100) : 0;
+  }
+
+  // Environment — bus mode share and electric buses
+  let environment = 20;
+  if (total > 0) {
+    const elec = s.fleet
+      .filter((f) => busModel(f.modelId).needsCharger)
+      .reduce((sum, f) => sum + f.count, 0);
+    let busShare = 0;
+    if (s.stats?.bgModes?.length) {
+      let bus = 0;
+      let all = 0;
+      for (const m of s.stats.bgModes) {
+        bus += m.bus;
+        all += m.bus + m.car + m.walk + m.bike;
+      }
+      busShare = all > 0 ? bus / all : 0;
+    }
+    environment = clamp100(45 * Math.min(1, busShare / 0.12) + 55 * (elec / total));
+  }
+
+  const scores: ReportScore[] = [
+    { key: 'coverage', label: 'Network coverage', score: coverage },
+    { key: 'connectivity', label: 'Connectability', score: connectivity },
+    { key: 'passengers', label: 'Passenger happiness', score: passengers },
+    { key: 'staff', label: 'Staff happiness', score: staff },
+    { key: 'safety', label: 'Safety', score: safety },
+    { key: 'reliability', label: 'Reliability', score: reliability },
+    { key: 'environment', label: 'Environment', score: environment },
+  ];
+  const weights: Record<string, number> = {
+    coverage: 0.2, connectivity: 0.15, passengers: 0.2, staff: 0.15,
+    safety: 0.15, reliability: 0.1, environment: 0.05,
+  };
+  const overall = clamp100(
+    scores.reduce((sum, sc) => sum + sc.score * (weights[sc.key] ?? 0), 0),
+  );
+  const payout =
+    overall >= 55
+      ? Math.round((overall - 55) * REPORT_GRANT_PER_POINT)
+      : overall < 35
+        ? -REPORT_FINE
+        : 0;
+  return { quarter, issuedAtMin: s.clockMin, scores, overall, payout };
 }
 
 /** street-following geometry for an ordered stop sequence (null = unroutable) */
@@ -253,6 +410,7 @@ export const useGame = create<GameState>((set, get) => {
         stops: s.stops.map((st) => ({ id: st.id, pt: st.pt, tier: st.tier ?? 1 })),
         lines: s.lines.map((l) => {
           const m = busModel(l.modelId);
+          const perf = fleetPerf(s.fleet, l.modelId);
           return {
             id: l.id,
             stopIds: l.stopIds,
@@ -262,9 +420,9 @@ export const useGame = create<GameState>((set, get) => {
             firstHour: l.firstHour,
             lastHour: l.lastHour,
             fare: l.fare,
-            capacity: m.capacity,
+            capacity: Math.round(m.capacity * perf.capMult),
             kmh: m.kmh,
-            costPerKm: m.costPerKm,
+            costPerKm: m.costPerKm * perf.costMult,
             vehicles: effectiveVehicles.get(l.id) ?? 0,
             active: l.active && s.depots.length > 0,
           };
@@ -298,6 +456,10 @@ export const useGame = create<GameState>((set, get) => {
     fleet: [],
     totalRidersServed: 0,
     loanTaken: false,
+    reports: [],
+    autoHireDriver:
+      typeof localStorage !== 'undefined' &&
+      localStorage.getItem('intralines-auto-driver') === '1',
 
     stats: null,
     tool: 'select',
@@ -365,9 +527,15 @@ export const useGame = create<GameState>((set, get) => {
               lines: sv.lines,
               depots,
               staff: sv.staff,
-              fleet: sv.fleet,
+              // saves from before wear ratings and report cards
+              fleet: sv.fleet.map((f) => ({
+                ...f,
+                wear: f.wear ?? 0,
+                tier: f.tier ?? 1,
+              })),
               totalRidersServed: sv.totalRidersServed,
               loanTaken: sv.loanTaken,
+              reports: sv.reports ?? [],
             };
             lineSeq = sv.lines.length + 1;
             stopSeq = sv.stops.length + 1;
@@ -395,6 +563,7 @@ export const useGame = create<GameState>((set, get) => {
         fleet: [],
         totalRidersServed: 0,
         loanTaken: false,
+        reports: [],
         stats: null,
         tool: 'select',
         draft: null,
@@ -457,12 +626,72 @@ export const useGame = create<GameState>((set, get) => {
         }
       }
 
+      // buses in service wear down; short mechanics speed it up, a workshop
+      // slows it. Running costs re-derive when a group crosses a 10% band.
+      let fleet = s.fleet;
+      let wearBand = false;
+      const wornOut: string[] = [];
+      if (s.fleet.length) {
+        const needM = Math.ceil(fleetTotal(s.fleet) / BUSES_PER_MECHANIC);
+        const mechFactor = s.staff.mechanics < needM ? 1.5 : 1;
+        const shopFactor = s.depots.some((d) => d.workshop) ? 0.75 : 1;
+        let changed = false;
+        fleet = s.fleet.map((f) => {
+          const inService = s.lines.reduce(
+            (sum, l) => sum + (l.active && l.modelId === f.modelId ? l.vehicles : 0),
+            0,
+          );
+          const use = f.count ? Math.min(1, inService / f.count) : 0;
+          if (use === 0 || f.wear >= 100) return f;
+          const wear = Math.min(
+            100,
+            f.wear + (WEAR_PER_DAY * use * mechFactor * shopFactor * dtMin) / 1440,
+          );
+          if (wear === f.wear) return f;
+          changed = true;
+          if (Math.floor(f.wear / 10) !== Math.floor(wear / 10)) wearBand = true;
+          if (f.wear < 70 && wear >= 70) wornOut.push(f.modelId);
+          return { ...f, wear };
+        });
+        if (!changed) fleet = s.fleet;
+      }
+
       set({
         clockMin: newClock,
         clockRef: { min: newClock, realMs: performance.now(), rate },
         cash: s.cash + dCash,
         totalRidersServed: newTotal,
+        fleet,
       });
+      if (wearBand) scheduleRecompute();
+      for (const id of wornOut) {
+        get().notify(
+          `Your ${busModel(id).name}s are looking ragged — refurbish them in the Fleet panel.`,
+          'bad',
+        );
+      }
+
+      // the Transit Authority grades the network every 4 game weeks
+      if (Math.floor(newClock / QUARTER_MIN) !== Math.floor(s.clockMin / QUARTER_MIN)) {
+        const st = get();
+        const card = buildReportCard(st, st.reports.length + 1);
+        set({
+          reports: [...st.reports, card],
+          cash: st.cash + card.payout,
+        });
+        const g = gradeOf(card.overall);
+        get().notify(
+          card.payout > 0
+            ? `Q${card.quarter} report card: ${g} overall — ` +
+                `$${Math.round(card.payout / 1000)}k Transit Authority grant.`
+            : card.payout < 0
+              ? `Q${card.quarter} report card: ${g} overall — ` +
+                  `$${Math.round(-card.payout / 1000)}k non-compliance fee.`
+              : `Q${card.quarter} report card: ${g} overall.`,
+          card.payout > 0 ? 'good' : card.payout < 0 ? 'bad' : 'info',
+        );
+        get().saveGame();
+      }
 
       // autosave every ~2 game hours
       if (Math.floor(newClock / 120) !== Math.floor(s.clockMin / 120)) get().saveGame();
@@ -882,11 +1111,22 @@ export const useGame = create<GameState>((set, get) => {
         get().notify('Not enough cash.', 'bad');
         return;
       }
-      const fleet = [...s.fleet];
-      const e = fleet.find((f) => f.modelId === modelId);
-      if (e) e.count++;
-      else fleet.push({ modelId, count: 1 });
-      set({ cash: s.cash - m.price, fleet });
+      // a factory-fresh bus dilutes the group's average wear
+      let fleet = s.fleet.map((f) =>
+        f.modelId === modelId
+          ? { ...f, count: f.count + 1, wear: (f.wear * f.count) / (f.count + 1) }
+          : f,
+      );
+      if (!fleet.some((f) => f.modelId === modelId)) {
+        fleet = [...fleet, { modelId, count: 1, wear: 0, tier: 1 }];
+      }
+      const staff = s.autoHireDriver
+        ? { ...s.staff, drivers: s.staff.drivers + 1 }
+        : s.staff;
+      set({ cash: s.cash - m.price, fleet, staff });
+      if (s.autoHireDriver) {
+        get().notify(`${m.name} delivered — a driver was hired with it.`, 'info');
+      }
       touchNetwork();
     },
 
@@ -900,13 +1140,72 @@ export const useGame = create<GameState>((set, get) => {
         return;
       }
       const m = busModel(modelId);
+      const e = s.fleet.find((f) => f.modelId === modelId);
+      // worn buses fetch less on the used market
+      const refund = Math.round(m.price * 0.5 * (1 - (e?.wear ?? 0) / 250));
       set({
-        cash: s.cash + Math.round(m.price * 0.5),
+        cash: s.cash + refund,
         fleet: s.fleet
           .map((f) => (f.modelId === modelId ? { ...f, count: f.count - 1 } : f))
           .filter((f) => f.count > 0),
       });
       touchNetwork();
+    },
+
+    refurbishFleet: (modelId) => {
+      const s = get();
+      const e = s.fleet.find((f) => f.modelId === modelId);
+      if (!e || e.wear < 5) return;
+      const m = busModel(modelId);
+      const cost = Math.max(
+        1000,
+        Math.round(e.count * m.price * REFURB_COST_SHARE * (e.wear / 100)),
+      );
+      if (s.cash < cost) {
+        get().notify('Not enough cash.', 'bad');
+        return;
+      }
+      set({
+        cash: s.cash - cost,
+        fleet: s.fleet.map((f) => (f.modelId === modelId ? { ...f, wear: 0 } : f)),
+      });
+      touchNetwork();
+      get().notify(`${m.name} fleet refurbished — good as new.`, 'good');
+      get().saveGame();
+    },
+
+    upgradeFleetModel: (modelId) => {
+      const s = get();
+      const e = s.fleet.find((f) => f.modelId === modelId);
+      if (!e || e.tier >= 3) return;
+      const m = busModel(modelId);
+      const cost = Math.round(e.count * m.price * FLEET_UPGRADE_COST_SHARE[e.tier + 1]);
+      if (s.cash < cost) {
+        get().notify('Not enough cash.', 'bad');
+        return;
+      }
+      set({
+        cash: s.cash - cost,
+        fleet: s.fleet.map((f) =>
+          f.modelId === modelId ? { ...f, tier: f.tier + 1 } : f,
+        ),
+      });
+      touchNetwork();
+      get().notify(
+        `${m.name} fleet upgraded to ${FLEET_TIER_NAMES[e.tier + 1]} — ` +
+          'more seats, cheaper to run.',
+        'good',
+      );
+      get().saveGame();
+    },
+
+    setAutoHireDriver: (v) => {
+      try {
+        localStorage.setItem('intralines-auto-driver', v ? '1' : '0');
+      } catch {
+        // fine
+      }
+      set({ autoHireDriver: v });
     },
 
     hire: (role) => {
@@ -1143,6 +1442,7 @@ export const useGame = create<GameState>((set, get) => {
         fleet: s.fleet,
         totalRidersServed: s.totalRidersServed,
         loanTaken: s.loanTaken,
+        reports: s.reports,
         savedAt: Date.now(),
       };
       try {
