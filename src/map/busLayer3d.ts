@@ -42,6 +42,11 @@ export interface LineExtras {
   /** street route from the depot to the line's first stop (deadhead) */
   depotPath?: { path: LngLat[]; cum: number[]; lenM: number };
   /**
+   * per-vehicle deadhead routes: vehicle k pulls out from the closest
+   * depot that still had parking when it was allocated (null = none)
+   */
+  depotPaths?: ({ path: LngLat[]; cum: number[]; lenM: number } | null)[];
+  /**
    * congestion relief from bus ridership along this corridor: 1 = no
    * effect, lower = riders who would have driven are off the road
    */
@@ -61,6 +66,7 @@ interface LineAnim {
   urban: number;
   mainShare: number;
   depotPath?: { path: LngLat[]; cum: number[]; lenM: number };
+  depotPaths?: ({ path: LngLat[]; cum: number[]; lenM: number } | null)[];
   modelKmh: number;
   /** congestion multiplier for this corridor at an hour of day */
   congAt: (hour: number) => number;
@@ -380,6 +386,7 @@ export class BusLayer3D implements CustomLayerInterface {
         urban,
         mainShare,
         depotPath: ex?.depotPath,
+        depotPaths: ex?.depotPaths,
         modelKmh: model.kmh,
         congAt,
         tau,
@@ -550,9 +557,11 @@ export class BusLayer3D implements CustomLayerInterface {
       // smoothly slow down instead of snapping to a rescaled timetable
       const cong = a.congAt(hour);
       const tauNow = tauAt(a, dayMin);
-      const dp = a.depotPath;
-      const deadMin = dp ? (dp.lenM / 1000 / a.modelKmh) * 60 + 0.2 : 0;
       for (let k = 0; k < a.vehicles; k++) {
+        // each vehicle deadheads from its own home depot — the closest one
+        // that still had parking when the fleet was garaged
+        const dp = a.depotPaths ? a.depotPaths[k] ?? undefined : a.depotPath;
+        const deadMin = dp ? (dp.lenM / 1000 / a.modelKmh) * 60 + 0.2 : 0;
         const mesh = a.meshes[k];
         const firstDep = svcStart + k * a.headwayEff;
         let visible = false;

@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import maplibregl, { Map as MLMap, MapMouseEvent, StyleSpecification } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
-import type { CityPack } from '../game/types';
+import type { CityPack, LngLat } from '../game/types';
 import { useGame } from '../game/store';
 import { buildPackStyle, buildRealStyle, PALETTE } from './basemapStyle';
 import {
@@ -12,6 +12,7 @@ import { BusLayer3D } from './busLayer3d';
 import type { LineExtras } from './busLayer3d';
 import { cumulativeDist } from '../game/routing';
 import { fastDistM } from '../game/geo';
+import { DEPOT_CAPACITY } from '../game/constants';
 
 /** quick probe: can we actually reach the tile server? */
 async function tilesReachable(): Promise<boolean> {
@@ -374,6 +375,11 @@ export function MapView({ pack }: { pack: CityPack }) {
     const sorted = [...dens].sort((a, b) => a - b);
     const densNorm = sorted[Math.floor(sorted.length * 0.85)] || 1;
     const bgModes = st.stats?.bgModes;
+    // parking left per depot — buses claim spaces line by line below, so a
+    // full depot pushes its overflow to the next-nearest garage
+    const depotSpace = new Map(
+      st.depots.map((d) => [d.id, DEPOT_CAPACITY[d.level] ?? 0]),
+    );
     const cellScan = (pt: [number, number], into: Set<number>): number => {
       const gx = Math.floor(pt[0] / CELLD);
       const gy = Math.floor(pt[1] / CELLD);
@@ -433,22 +439,41 @@ export function MapView({ pack }: { pack: CityPack }) {
         mainShare: samples ? mainCnt / samples : 0.5,
         relief,
       };
-      // deadhead: street route from the closest depot to the first stop
+      // deadheads: every vehicle is garaged at the closest depot to the
+      // line's first stop that still has parking, spilling to the
+      // next-nearest once a depot fills up
       const first = st.stops.find((x) => x.id === l.stopIds[0]);
       if (st.depots.length && first) {
-        let home = st.depots[0];
-        let bestM = Infinity;
-        for (const d of st.depots) {
-          const dm = fastDistM(d.pt, first.pt, cosLat);
-          if (dm < bestM) {
-            bestM = dm;
-            home = d;
+        const byDist = [...st.depots].sort(
+          (a, b) =>
+            fastDistM(a.pt, first.pt, cosLat) - fastDistM(b.pt, first.pt, cosLat),
+        );
+        const routes = new Map<string, { path: LngLat[]; cum: number[]; lenM: number } | null>();
+        const routeFrom = (depId: string, node: number) => {
+          if (!routes.has(depId)) {
+            const r = g.route(node, first.node);
+            if (r && r.path.length >= 2) {
+              const cum = cumulativeDist(r.path, cosLat);
+              routes.set(depId, { path: r.path, cum, lenM: cum[cum.length - 1] });
+            } else {
+              routes.set(depId, null);
+            }
           }
-        }
-        const r = g.route(home.node, first.node);
-        if (r && r.path.length >= 2) {
-          const cum = cumulativeDist(r.path, cosLat);
-          extras.depotPath = { path: r.path, cum, lenM: cum[cum.length - 1] };
+          return routes.get(depId) ?? null;
+        };
+        if (l.vehicles > 0) {
+          const perVehicle: ({ path: LngLat[]; cum: number[]; lenM: number } | null)[] = [];
+          for (let k = 0; k < l.vehicles; k++) {
+            const home =
+              byDist.find((d) => (depotSpace.get(d.id) ?? 0) > 0) ?? byDist[0];
+            depotSpace.set(home.id, (depotSpace.get(home.id) ?? 0) - 1);
+            perVehicle.push(routeFrom(home.id, home.node));
+          }
+          extras.depotPaths = perVehicle;
+          extras.depotPath = perVehicle.find(Boolean) ?? undefined;
+        } else {
+          // idle line: no buses to garage, but keep a sensible pull-out
+          extras.depotPath = routeFrom(byDist[0].id, byDist[0].node) ?? undefined;
         }
       }
       out.set(l.id, extras);

@@ -4,10 +4,11 @@ import {
   gradeOf, useGame,
 } from '../game/store';
 import {
-  BUSES_PER_MECHANIC, BUS_MODELS, CHARGERS_COST, DEPOT_CAPACITY, DEPOT_COST,
+  BUSES_PER_MECHANIC, BUS_MODELS, CHARGERS_COST, DEPOT_CAPACITY,
   DEPOT_UPGRADE_COST, FLEET_TIER_NAMES, FLEET_UPGRADE_COST_SHARE, MAX_DEPOTS,
   DRIVER_WAGE_PER_HOUR, HEADWAY_CHOICES, LOAN_AMOUNT, LOAN_FEE, LOAN_PAYOFF,
-  LOAN_WEEKLY_INTEREST, MECHANIC_WAGE_PER_DAY, QUARTER_WEEKS, REFURB_COST_SHARE,
+  LOAN_WEEKLY_INTEREST, MECHANIC_WAGE_PER_DAY, nextDepotCost, QUARTER_WEEKS,
+  REFURB_COST_SHARE,
   STOP_COST, STOP_TIER_NAMES,
   STOP_UPGRADE_COST, SUBSIDY_PER_RIDER, WASH_BAY_COST, WORKSHOP_COST, wearLabel,
 } from '../game/constants';
@@ -807,7 +808,7 @@ function DepotPanel() {
           starts and ends its day here.
         </p>
         <button className="btn primary with-icon" onClick={() => setTool('depot-place')}>
-          <IconDepot size={15} /> Place depot ({fmtMoney(DEPOT_COST)})
+          <IconDepot size={15} /> Place depot ({fmtMoney(nextDepotCost(0))})
         </button>
       </>
     );
@@ -822,7 +823,10 @@ function DepotPanel() {
         </b>
       </div>
       {depots.length > 1 && (
-        <p className="hint">Buses pull out from whichever depot is closest to their line.</p>
+        <p className="hint">
+          Each bus is garaged at the closest depot to its line that still has room —
+          when one fills up, the overflow parks at the next-nearest.
+        </p>
       )}
       <div className="list">
         {depots.map((d) => {
@@ -882,21 +886,26 @@ function DepotPanel() {
           City planning caps you at {MAX_DEPOTS} depots — upgrade one for more parking.
         </p>
       ) : (
-        <button
-          className={`btn with-icon ${tool === 'depot-place' ? 'primary' : ''}`}
-          disabled={cash < DEPOT_COST}
-          title={
-            cash < DEPOT_COST
-              ? `Need ${fmtMoney(DEPOT_COST)} — you're ${fmtMoney(DEPOT_COST - cash)} short.`
-              : 'Then click the map where the new depot should go'
-          }
-          onClick={() => setTool('depot-place')}
-        >
-          <IconDepot size={15} />{' '}
-          {tool === 'depot-place'
-            ? 'Click the map to place it…'
-            : `Build another depot (${fmtMoney(DEPOT_COST)})`}
-        </button>
+        (() => {
+          const cost = nextDepotCost(depots.length);
+          return (
+            <button
+              className={`btn with-icon ${tool === 'depot-place' ? 'primary' : ''}`}
+              disabled={cash < cost}
+              title={
+                cash < cost
+                  ? `Need ${fmtMoney(cost)} — you're ${fmtMoney(cost - cash)} short.`
+                  : 'Land gets pricier with every depot. Click the map where it should go.'
+              }
+              onClick={() => setTool('depot-place')}
+            >
+              <IconDepot size={15} />{' '}
+              {tool === 'depot-place'
+                ? 'Click the map to place it…'
+                : `Build another depot (${fmtMoney(cost)})`}
+            </button>
+          );
+        })()
       )}
     </>
   );

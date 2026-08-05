@@ -4,11 +4,11 @@ import type {
   SaveGame, Staff, Stop, Tool,
 } from './types';
 import {
-  BUS_MODELS, DEPOT_CAPACITY, DEPOT_COST, DEPOT_UPGRADE_COST, DEPOT_UPKEEP_PER_DAY,
+  BUS_MODELS, DEPOT_CAPACITY, DEPOT_UPGRADE_COST, DEPOT_UPKEEP_PER_DAY,
   BUSES_PER_MECHANIC, CHARGERS_COST, FLEET_TIER_CAP, FLEET_TIER_COST, FLEET_TIER_NAMES,
   FLEET_UPGRADE_COST_SHARE, HEADWAY_CHOICES, LINE_COLORS, LOAN_AMOUNT, MAX_DEPOTS,
   LOAN_FEE, LOAN_PAYOFF, LOAN_WEEKLY_INTEREST, MECHANIC_WAGE_PER_DAY,
-  OFFICE_OVERHEAD_PER_DAY, QUARTER_MIN, REFURB_COST_SHARE, REPORT_FINE,
+  nextDepotCost, OFFICE_OVERHEAD_PER_DAY, QUARTER_MIN, REFURB_COST_SHARE, REPORT_FINE,
   REPORT_GRANT_PER_POINT, SAVE_KEY_PREFIX,
   SAVE_VERSION, SPEEDS, START_CASH, STOP_COST, STOP_MAX_KMH, STOP_TIER_NAMES,
   STOP_UPGRADE_COST, SUBSIDY_PER_RIDER, WASH_BAY_COST, WEAR_COST_PENALTY, WEAR_PER_DAY,
@@ -1229,8 +1229,13 @@ export const useGame = create<GameState>((set, get) => {
         set({ tool: 'select' });
         return;
       }
-      if (s.cash < DEPOT_COST) {
-        get().notify('Not enough cash for a depot.', 'bad');
+      const cost = nextDepotCost(s.depots.length);
+      if (s.cash < cost) {
+        get().notify(
+          `Not enough cash — depot #${s.depots.length + 1} costs ` +
+            `$${(cost / 1000).toFixed(0)}k (land keeps getting pricier).`,
+          'bad',
+        );
         return;
       }
       const node = s.graph.nearestNode(pt, 400);
@@ -1257,7 +1262,7 @@ export const useGame = create<GameState>((set, get) => {
       };
       set({
         depots: [...s.depots, depot],
-        cash: s.cash - DEPOT_COST,
+        cash: s.cash - cost,
         tool: 'select',
         panel: 'depot',
       });
@@ -1265,7 +1270,7 @@ export const useGame = create<GameState>((set, get) => {
       get().notify(
         s.depots.length === 0
           ? `${depot.name} built! Buy buses in the Fleet panel, then draw a line.`
-          : `${depot.name} built — buses now pull out from whichever depot is closest.`,
+          : `${depot.name} built — buses pull out from the closest depot with room.`,
         'good',
       );
       get().saveGame();

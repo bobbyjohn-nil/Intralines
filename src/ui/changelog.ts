@@ -15,6 +15,15 @@ export interface LogEntry {
 
 export const CHANGELOG: LogEntry[] = [
   {
+    version: '1.7',
+    date: 'Aug 5, 2026',
+    title: 'Full house',
+    items: [
+      "Depot parking is now a real constraint for deadheads: every bus is garaged at the closest depot to its line that still has a free space, and once a depot fills up the overflow parks at the next-nearest — you'll see each bus pull out from and drive home to its own garage.",
+      'Depot land gets pricier the more you own: $150k for the first, then $225k, $340k, $505k and $760k for the fifth.',
+    ],
+  },
+  {
     version: '1.6',
     date: 'Aug 5, 2026',
     title: 'Under new scrutiny',

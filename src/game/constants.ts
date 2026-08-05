@@ -16,6 +16,12 @@ export const LOAN_PAYOFF = 750_000; // the only way to make them go away
 
 export const DEPOT_COST = 150_000;
 export const MAX_DEPOTS = 5; // city planning won't zone any more of them
+/** each additional depot costs 50% more — land gets scarce */
+export const DEPOT_COST_GROWTH = 1.5;
+/** price of the next depot when you already own `count`: $150k, $225k, $340k, $505k, $760k */
+export function nextDepotCost(count: number): number {
+  return Math.round((DEPOT_COST * Math.pow(DEPOT_COST_GROWTH, count)) / 5000) * 5000;
+}
 export const DEPOT_UPGRADE_COST: Record<number, number> = { 2: 220_000, 3: 450_000 };
 export const DEPOT_CAPACITY: Record<number, number> = { 1: 6, 2: 14, 3: 30 };
 export const DEPOT_UPKEEP_PER_DAY: Record<number, number> = { 1: 300, 2: 700, 3: 1_400 };
