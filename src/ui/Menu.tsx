@@ -7,6 +7,7 @@ import { useGame } from '../game/store';
 import type { CityMeta, SaveGame } from '../game/types';
 import { BusSide, IconUpload } from './icons';
 import { CHANGELOG } from './changelog';
+import { fmtClock } from './format';
 
 type View = 'root' | 'play' | 'saves' | 'settings' | 'log';
 
@@ -23,14 +24,9 @@ interface SaveRow {
   sv: SaveGame;
 }
 
-const DAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-
 function gameClock(clockMin: number): string {
-  const week = Math.floor(clockMin / 10080) + 1;
-  const day = DAY_NAMES[Math.floor((clockMin % 10080) / 1440) % 7];
-  const hh = String(Math.floor((clockMin % 1440) / 60)).padStart(2, '0');
-  const mm = String(Math.floor(clockMin % 60)).padStart(2, '0');
-  return `Week ${week}, ${day} ${hh}:${mm}`;
+  const { year, quarter, day, time } = fmtClock(clockMin);
+  return `Year ${year} Q${quarter}, Day ${day} · ${time}`;
 }
 
 function money(n: number): string {

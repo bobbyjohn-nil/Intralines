@@ -11,13 +11,26 @@ export function fmtInt(v: number): string {
   return Math.round(v).toLocaleString('en-US');
 }
 
-const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+import { DAYS_PER_QUARTER, QUARTERS_PER_YEAR } from '../game/constants';
 
-export function fmtClock(clockMin: number): { day: string; time: string; week: number } {
+/** game calendar: 16-day quarters, 4 quarters to a year */
+export function fmtClock(clockMin: number): {
+  year: number;
+  quarter: number;
+  day: number;
+  time: string;
+} {
   const total = Math.floor(clockMin);
-  const week = Math.floor(total / (7 * 1440)) + 1;
-  const day = DAYS[Math.floor(total / 1440) % 7];
+  const dayIdx = Math.floor(total / 1440);
+  const year = Math.floor(dayIdx / (DAYS_PER_QUARTER * QUARTERS_PER_YEAR)) + 1;
+  const quarter = Math.floor(dayIdx / DAYS_PER_QUARTER) % QUARTERS_PER_YEAR + 1;
+  const day = (dayIdx % DAYS_PER_QUARTER) + 1;
   const h = Math.floor((total % 1440) / 60);
   const m = total % 60;
-  return { day, time: `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`, week };
+  return {
+    year,
+    quarter,
+    day,
+    time: `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`,
+  };
 }

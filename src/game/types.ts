@@ -204,7 +204,7 @@ export interface SaveGame {
   version: number;
   cityId: string;
   cash: number;
-  /** minutes since Monday 00:00 of week 1 */
+  /** minutes since Year 1 Q1 Day 1, 00:00 (16-day quarters, 4 per year) */
   clockMin: number;
   stops: Stop[];
   lines: BusLine[];

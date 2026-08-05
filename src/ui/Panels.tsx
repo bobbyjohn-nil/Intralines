@@ -7,8 +7,8 @@ import {
   BUSES_PER_MECHANIC, BUS_MODELS, CHARGERS_COST, DEPOT_CAPACITY,
   DEPOT_UPGRADE_COST, FLEET_TIER_NAMES, FLEET_UPGRADE_COST_SHARE, MAX_DEPOTS,
   DRIVER_WAGE_PER_HOUR, HEADWAY_CHOICES, LOAN_AMOUNT, LOAN_FEE, LOAN_PAYOFF,
-  LOAN_WEEKLY_INTEREST, MECHANIC_WAGE_PER_DAY, nextDepotCost, QUARTER_WEEKS,
-  REFURB_COST_SHARE,
+  DAYS_PER_QUARTER, LOAN_INTEREST_PER_DAY, MECHANIC_WAGE_PER_DAY, nextDepotCost,
+  quarterLabel, REFURB_COST_SHARE,
   STOP_COST, STOP_TIER_NAMES,
   STOP_UPGRADE_COST, SUBSIDY_PER_RIDER, WASH_BAY_COST, WORKSHOP_COST, wearLabel,
 } from '../game/constants';
@@ -653,9 +653,10 @@ function ReportPanel() {
       <>
         <PanelTitle title="Report card" />
         <p className="hint">
-          The Transit Authority inspects your network every {QUARTER_WEEKS} weeks (one
-          quarter) and grades network coverage, connectability, passenger happiness,
-          staff happiness, safety, reliability and environment.
+          The Transit Authority inspects your network at the end of every{' '}
+          {DAYS_PER_QUARTER}-day quarter (4 quarters to a year) and grades network
+          coverage, connectability, passenger happiness, staff happiness, safety,
+          reliability and environment.
         </p>
         <p className="hint">
           Good marks earn a government grant; a failing network draws a
@@ -668,7 +669,7 @@ function ReportPanel() {
   const band = (v: number) => (v >= 70 ? 'good' : v >= 55 ? 'mid' : 'bad');
   return (
     <>
-      <PanelTitle title={`Q${latest.quarter} report card`} />
+      <PanelTitle title={`${quarterLabel(latest.quarter)} report card`} />
       <div className="report-overall">
         <span className={`grade-chip ${band(latest.overall)}`}>{gradeOf(latest.overall)}</span>
         <div>
@@ -699,7 +700,7 @@ function ReportPanel() {
           {[...reports.slice(0, -1)].reverse().map((r) => (
             <div key={r.quarter} className="kv">
               <span>
-                Q{r.quarter} — {gradeOf(r.overall)} ({Math.round(r.overall)}/100)
+                {quarterLabel(r.quarter)} — {gradeOf(r.overall)} ({Math.round(r.overall)}/100)
               </span>
               <b className={r.payout < 0 ? 'bad' : r.payout > 0 ? 'good' : ''}>
                 {r.payout > 0
@@ -959,8 +960,8 @@ function FinancePanel() {
             <p className="hint">
               The only bank that returns your calls. {fmtMoney(LOAN_AMOUNT)} minus a{' '}
               {fmtMoney(LOAN_FEE)} &ldquo;arrangement fee&rdquo;, at{' '}
-              {fmtMoney(LOAN_WEEKLY_INTEREST)}/week — forever. The debt never shrinks;
-              they'll release you for {fmtMoney(LOAN_PAYOFF)}.
+              {fmtMoney(LOAN_INTEREST_PER_DAY)} a day — forever. The debt never
+              shrinks; they'll release you for {fmtMoney(LOAN_PAYOFF)}.
             </p>
             <button className="btn danger with-icon" onClick={takeLoan}>
               <IconBank size={15} /> Sign with Talon &amp; Grasp (+{fmtMoney(LOAN_AMOUNT - LOAN_FEE)})
@@ -969,7 +970,7 @@ function FinancePanel() {
         ) : (
           <>
             <p className="hint">
-              You owe them {fmtMoney(LOAN_WEEKLY_INTEREST)} every week, in perpetuity.
+              You owe them {fmtMoney(LOAN_INTEREST_PER_DAY)} every day, in perpetuity.
               They send a fruit basket each quarter. It is always slightly rotten.
             </p>
             <button

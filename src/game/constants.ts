@@ -11,7 +11,7 @@ export const START_CASH = 310_000;
 // exit is buying your way out at a premium.
 export const LOAN_AMOUNT = 500_000;
 export const LOAN_FEE = 50_000; // skimmed before the money arrives
-export const LOAN_WEEKLY_INTEREST = 16_000; // 3.2%/week, never amortizes
+export const LOAN_INTEREST_PER_DAY = 2_300; // never amortizes
 export const LOAN_PAYOFF = 750_000; // the only way to make them go away
 
 export const DEPOT_COST = 150_000;
@@ -60,10 +60,18 @@ export function wearLabel(wear: number): string {
   return wear < 25 ? 'Fresh' : wear < 50 ? 'Good' : wear < 75 ? 'Worn' : 'Ragged';
 }
 
-// Quarterly report cards: the Transit Authority grades the network every
-// 4 game weeks and pays a grant (or levies a fee) based on the overall mark.
-export const QUARTER_WEEKS = 4;
-export const QUARTER_MIN = QUARTER_WEEKS * 7 * 1440;
+// The game calendar: 16 days to a quarter, 4 quarters to a year. The
+// Transit Authority grades the network at the end of every quarter and
+// pays a grant (or levies a fee) based on the overall mark.
+export const DAYS_PER_QUARTER = 16;
+export const QUARTERS_PER_YEAR = 4;
+export const QUARTER_MIN = DAYS_PER_QUARTER * 1440;
+export const YEAR_MIN = QUARTER_MIN * QUARTERS_PER_YEAR;
+/** "Y2 Q3" label for the n-th quarter since the company opened (1-based) */
+export function quarterLabel(q: number): string {
+  const y = Math.floor((q - 1) / QUARTERS_PER_YEAR) + 1;
+  return `Y${y} Q${((q - 1) % QUARTERS_PER_YEAR) + 1}`;
+}
 export const REPORT_GRANT_PER_POINT = 1600; // $ per overall point above 55
 export const REPORT_FINE = 8_000; // flat non-compliance fee below 35 overall
 

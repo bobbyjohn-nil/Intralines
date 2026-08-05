@@ -17,7 +17,7 @@ export function TopBar() {
   const togglePause = useGame((s) => s.togglePause);
   const backToMenu = useGame((s) => s.backToMenu);
 
-  const { day, time, week } = fmtClock(clockMin);
+  const { year, quarter, day, time } = fmtClock(clockMin);
   // riders you've put on buses are cars you've taken off the road
   let relief = 1;
   if (stats?.bgModes) {
@@ -38,8 +38,11 @@ export function TopBar() {
       <button className="chip ghost" onClick={backToMenu} title="Back to city select">
         ‹ {pack?.meta.name ?? ''}
       </button>
-      <div className="chip clock">
-        <span className="dim">W{week}</span> {day} <b>{time}</b>
+      <div className="chip clock" title={`Year ${year}, quarter ${quarter}, day ${day} of 16`}>
+        <span className="dim">
+          Y{year} Q{quarter}
+        </span>{' '}
+        D{day} <b>{time}</b>
         {congestion >= 1.3 && (
           <span className="traffic" title="Rush hour — heavy traffic, buses running slow">
             <IconCar size={15} />

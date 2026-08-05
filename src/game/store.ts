@@ -7,7 +7,7 @@ import {
   BUS_MODELS, DEPOT_CAPACITY, DEPOT_UPGRADE_COST, DEPOT_UPKEEP_PER_DAY,
   BUSES_PER_MECHANIC, CHARGERS_COST, FLEET_TIER_CAP, FLEET_TIER_COST, FLEET_TIER_NAMES,
   FLEET_UPGRADE_COST_SHARE, HEADWAY_CHOICES, LINE_COLORS, LOAN_AMOUNT, MAX_DEPOTS,
-  LOAN_FEE, LOAN_PAYOFF, LOAN_WEEKLY_INTEREST, MECHANIC_WAGE_PER_DAY,
+  LOAN_FEE, LOAN_INTEREST_PER_DAY, LOAN_PAYOFF, MECHANIC_WAGE_PER_DAY, quarterLabel,
   nextDepotCost, OFFICE_OVERHEAD_PER_DAY, QUARTER_MIN, REFURB_COST_SHARE, REPORT_FINE,
   REPORT_GRANT_PER_POINT, SAVE_KEY_PREFIX,
   SAVE_VERSION, SPEEDS, START_CASH, STOP_COST, STOP_MAX_KMH, STOP_TIER_NAMES,
@@ -444,7 +444,7 @@ export const useGame = create<GameState>((set, get) => {
     graph: null,
 
     cash: START_CASH,
-    clockMin: 6 * 60, // Monday 06:00
+    clockMin: 6 * 60, // Year 1 Q1 Day 1, 06:00
     clockRef: { min: 6 * 60, realMs: 0, rate: 0 },
     speedIdx: 0,
     paused: false,
@@ -615,7 +615,7 @@ export const useGame = create<GameState>((set, get) => {
       let fixedPerDay = OFFICE_OVERHEAD_PER_DAY;
       for (const d of s.depots) fixedPerDay += DEPOT_UPKEEP_PER_DAY[d.level] ?? 0;
       fixedPerDay += s.staff.mechanics * MECHANIC_WAGE_PER_DAY;
-      if (s.loanTaken) fixedPerDay += LOAN_WEEKLY_INTEREST / 7;
+      if (s.loanTaken) fixedPerDay += LOAN_INTEREST_PER_DAY;
       dCash -= (fixedPerDay / 1440) * dtMin;
 
       const prevTotal = s.totalRidersServed;
@@ -671,7 +671,8 @@ export const useGame = create<GameState>((set, get) => {
         );
       }
 
-      // the Transit Authority grades the network every 4 game weeks
+      // the Transit Authority grades the network at the end of each
+      // 16-day quarter
       if (Math.floor(newClock / QUARTER_MIN) !== Math.floor(s.clockMin / QUARTER_MIN)) {
         const st = get();
         const card = buildReportCard(st, st.reports.length + 1);
@@ -680,14 +681,15 @@ export const useGame = create<GameState>((set, get) => {
           cash: st.cash + card.payout,
         });
         const g = gradeOf(card.overall);
+        const label = quarterLabel(card.quarter);
         get().notify(
           card.payout > 0
-            ? `Q${card.quarter} report card: ${g} overall — ` +
+            ? `${label} report card: ${g} overall — ` +
                 `$${Math.round(card.payout / 1000)}k Transit Authority grant.`
             : card.payout < 0
-              ? `Q${card.quarter} report card: ${g} overall — ` +
+              ? `${label} report card: ${g} overall — ` +
                   `$${Math.round(-card.payout / 1000)}k non-compliance fee.`
-              : `Q${card.quarter} report card: ${g} overall.`,
+              : `${label} report card: ${g} overall.`,
           card.payout > 0 ? 'good' : card.payout < 0 ? 'bad' : 'info',
         );
         get().saveGame();
@@ -1402,7 +1404,7 @@ export const useGame = create<GameState>((set, get) => {
       get().notify(
         `Talon & Grasp wires $${((LOAN_AMOUNT - LOAN_FEE) / 1000).toFixed(0)}k ` +
           `(after their $${(LOAN_FEE / 1000).toFixed(0)}k "arrangement fee"). ` +
-          `$${(LOAN_WEEKLY_INTEREST / 1000).toFixed(0)}k/week interest, forever. ` +
+          `$${(LOAN_INTEREST_PER_DAY / 1000).toFixed(1)}k interest a day, forever. ` +
           'They smile as you sign.',
         'bad',
       );

@@ -15,6 +15,16 @@ export interface LogEntry {
 
 export const CHANGELOG: LogEntry[] = [
   {
+    version: '1.8',
+    date: 'Aug 5, 2026',
+    title: 'A new calendar',
+    items: [
+      'The game now runs on a proper transit calendar: 16-day quarters, 4 quarters to a year. The clock reads "Y1 Q2 · D7 06:04", saves show the same format, and report cards are labeled by year and quarter ("Y2 Q3 report card").',
+      'Weeks are gone, so Talon & Grasp bill daily now: $2.3k of interest every day, forever — the same drain as before, just on the new calendar. The rotten quarterly fruit basket survives the transition.',
+      'Existing saves carry over — the clock simply re-reads your elapsed time in the new calendar.',
+    ],
+  },
+  {
     version: '1.7',
     date: 'Aug 5, 2026',
     title: 'Full house',
