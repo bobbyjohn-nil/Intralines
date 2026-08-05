@@ -5,6 +5,25 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Intralines Bus Simulator</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='0.9em' font-size='90'>🚌</text></svg>" />
+    <script>
+      // After a deploy, a cached copy of this page can reference hashed
+      // asset files that no longer exist — the screen stays blank. Catch
+      // the failed load and refresh once to pick up the new page.
+      window.addEventListener(
+        'error',
+        function (e) {
+          var t = e.target;
+          var failedAsset =
+            (t && t.tagName === 'SCRIPT' && t.src) ||
+            (t && t.tagName === 'LINK' && t.rel === 'stylesheet');
+          if (failedAsset && !sessionStorage.getItem('il-reloaded')) {
+            sessionStorage.setItem('il-reloaded', '1');
+            location.reload();
+          }
+        },
+        true
+      );
+    </script>
   </head>
   <body>
     <div id="root"></div>
