@@ -67,10 +67,10 @@ export const DAYS_PER_QUARTER = 16;
 export const QUARTERS_PER_YEAR = 4;
 export const QUARTER_MIN = DAYS_PER_QUARTER * 1440;
 export const YEAR_MIN = QUARTER_MIN * QUARTERS_PER_YEAR;
-/** "Y2 Q3" label for the n-th quarter since the company opened (1-based) */
+/** "Year 2 Quarter 3" label for the n-th quarter since opening (1-based) */
 export function quarterLabel(q: number): string {
   const y = Math.floor((q - 1) / QUARTERS_PER_YEAR) + 1;
-  return `Y${y} Q${((q - 1) % QUARTERS_PER_YEAR) + 1}`;
+  return `Year ${y} Quarter ${((q - 1) % QUARTERS_PER_YEAR) + 1}`;
 }
 export const REPORT_GRANT_PER_POINT = 1600; // $ per overall point above 55
 export const REPORT_FINE = 8_000; // flat non-compliance fee below 35 overall
@@ -82,6 +82,13 @@ export const OFFICE_OVERHEAD_PER_DAY = 250;
 
 export const DWELL_SEC = 20; // stop dwell time
 export const LAYOVER_MIN = 4; // rest at each end of a round trip
+/** rush-hour clock hours — lines can run a tighter headway during these */
+export const PEAK_HOURS = new Set([7, 8, 16, 17]);
+export function isPeakHour(h: number): boolean {
+  return PEAK_HOURS.has(((Math.floor(h) % 24) + 24) % 24);
+}
+/** minutes a bus spends topping up its tank back at the depot */
+export const REFUEL_MIN = 7;
 export const WALK_MIN_PER_KM = 12;
 export const MAX_WALK_M = 650; // catchment radius around stops
 export const TRANSFER_PENALTY_MIN = 6;
@@ -106,6 +113,8 @@ export const BUS_MODELS: BusModelSpec[] = [
     capacity: 28,
     price: 95_000,
     costPerKm: 0.9,
+    fuelPerKm: 0.38,
+    tankKm: 260,
     kmh: 26,
     unlockRiders: 0,
     short: 'Mini',
@@ -118,6 +127,8 @@ export const BUS_MODELS: BusModelSpec[] = [
     capacity: 70,
     price: 260_000,
     costPerKm: 1.5,
+    fuelPerKm: 0.62,
+    tankKm: 420,
     kmh: 25,
     unlockRiders: 0,
     short: 'City',
@@ -130,6 +141,8 @@ export const BUS_MODELS: BusModelSpec[] = [
     capacity: 115,
     price: 440_000,
     costPerKm: 2.2,
+    fuelPerKm: 0.95,
+    tankKm: 480,
     kmh: 23,
     unlockRiders: 25_000,
     short: 'Artic',
@@ -142,6 +155,8 @@ export const BUS_MODELS: BusModelSpec[] = [
     capacity: 75,
     price: 380_000,
     costPerKm: 0.7,
+    fuelPerKm: 0.16,
+    tankKm: 300,
     kmh: 26,
     unlockRiders: 60_000,
     needsCharger: true,

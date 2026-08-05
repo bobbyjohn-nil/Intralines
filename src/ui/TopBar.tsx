@@ -38,11 +38,11 @@ export function TopBar() {
       <button className="chip ghost" onClick={backToMenu} title="Back to city select">
         ‹ {pack?.meta.name ?? ''}
       </button>
-      <div className="chip clock" title={`Year ${year}, quarter ${quarter}, day ${day} of 16`}>
+      <div className="chip clock" title={`Day ${day} of 16 in this quarter`}>
         <span className="dim">
-          Y{year} Q{quarter}
+          Year {year} · Quarter {quarter}
         </span>{' '}
-        D{day} <b>{time}</b>
+        Day {day} <b>{time}</b>
         {congestion >= 1.3 && (
           <span className="traffic" title="Rush hour — heavy traffic, buses running slow">
             <IconCar size={15} />

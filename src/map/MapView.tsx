@@ -6,7 +6,7 @@ import { useGame } from '../game/store';
 import { buildPackStyle, buildRealStyle, PALETTE } from './basemapStyle';
 import {
   addBoundaryMask, ensureOverlays, MODE_COLORS, updateDepots, updateDraft, updateDraftCursor,
-  updateHeatmap, updateNetwork,
+  updateHeatmap, updateNetwork, updateTraffic,
 } from './overlays';
 import { BusLayer3D } from './busLayer3d';
 import type { LineExtras } from './busLayer3d';
@@ -45,6 +45,8 @@ export function MapView({ pack }: { pack: CityPack }) {
   const selectedLineId = useGame((s) => s.selectedLineId);
   const draft = useGame((s) => s.draft);
   const heatmap = useGame((s) => s.heatmap);
+  const trafficView = useGame((s) => s.trafficView);
+  const trafficHour = useGame((s) => s.trafficHour);
   const depots = useGame((s) => s.depots);
   const stats = useGame((s) => s.stats);
   const tool = useGame((s) => s.tool);
@@ -531,6 +533,20 @@ export function MapView({ pack }: { pack: CityPack }) {
       .addTo(map);
   }
 
+  /** citywide congestion damping from bus ridership (same math as TopBar) */
+  function reliefNow(): number {
+    const bg = useGame.getState().stats?.bgModes;
+    if (!bg) return 1;
+    let car = 0;
+    let bus = 0;
+    for (const m of bg) {
+      car += m.car;
+      bus += m.bus;
+    }
+    const baseline = car + bus * 0.87;
+    return baseline > 0 ? Math.max(0.6, Math.min(1, car / baseline)) : 1;
+  }
+
   function syncAll(): void {
     const map = mapRef.current;
     if (!map || !readyRef.current) return;
@@ -538,6 +554,7 @@ export function MapView({ pack }: { pack: CityPack }) {
     updateHeatmap(map, pack, st.heatmap, st.stats?.bgModes);
     updateNetwork(map, st.stops, st.lines, st.selectedLineId);
     updateDraft(map, st.draft);
+    updateTraffic(map, pack, st.trafficView, st.trafficHour, reliefNow());
     syncDepot();
     busLayerRef.current?.setNetwork(
       st.lines, st.stats?.perLine ?? [], st.stops, lineExtras(),
@@ -605,6 +622,14 @@ export function MapView({ pack }: { pack: CityPack }) {
   useEffect(() => {
     if (readyRef.current) syncDepot();
   }, [depots]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (map && readyRef.current) {
+      updateTraffic(map, pack, trafficView, trafficHour, reliefNow());
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [trafficView, trafficHour, stats, pack]);
 
   useEffect(() => {
     if (readyRef.current) {

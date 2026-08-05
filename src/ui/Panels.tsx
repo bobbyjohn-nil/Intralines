@@ -1,19 +1,53 @@
-import { useRef } from 'react';
+import { useMemo, useRef } from 'react';
 import {
   busModel, depotCapacity, driversNeeded, fleetAssigned, fleetOwned, fleetTotal,
   gradeOf, useGame,
 } from '../game/store';
 import {
   BUSES_PER_MECHANIC, BUS_MODELS, CHARGERS_COST, DEPOT_CAPACITY,
-  DEPOT_UPGRADE_COST, FLEET_TIER_NAMES, FLEET_UPGRADE_COST_SHARE, MAX_DEPOTS,
+  DEPOT_UPGRADE_COST, DWELL_SEC, FLEET_TIER_NAMES, FLEET_UPGRADE_COST_SHARE,
+  LAYOVER_MIN, MAX_DEPOTS, MAX_WALK_M,
   DRIVER_WAGE_PER_HOUR, HEADWAY_CHOICES, LOAN_AMOUNT, LOAN_FEE, LOAN_PAYOFF,
   DAYS_PER_QUARTER, LOAN_INTEREST_PER_DAY, MECHANIC_WAGE_PER_DAY, nextDepotCost,
-  quarterLabel, REFURB_COST_SHARE,
+  quarterLabel, REFUEL_MIN, REFURB_COST_SHARE,
   STOP_COST, STOP_TIER_NAMES,
   STOP_UPGRADE_COST, SUBSIDY_PER_RIDER, WASH_BAY_COST, WORKSHOP_COST, wearLabel,
 } from '../game/constants';
 import { fmtInt, fmtMoney } from './format';
-import type { FleetEntry, LineStats } from '../game/types';
+import type { CityPack, FleetEntry, LineStats, LngLat } from '../game/types';
+import { fastDistM } from '../game/geo';
+
+/** residents within a short walk of any of these points (centroid approx) */
+export function reachPop(pack: CityPack | null, pts: LngLat[]): number {
+  if (!pack || !pts.length) return 0;
+  const cosLat = Math.cos((pack.meta.center[1] * Math.PI) / 180);
+  let pop = 0;
+  for (const bg of pack.blockGroups) {
+    for (const pt of pts) {
+      if (fastDistM(bg.centroid, pt, cosLat) <= MAX_WALK_M) {
+        pop += bg.pop;
+        break;
+      }
+    }
+  }
+  return pop;
+}
+
+/** round-trip schedule preview mirroring the sim's timetable math */
+export function cyclePreview(
+  pathLenM: number,
+  stopCount: number,
+  model: { kmh: number; tankKm: number },
+): { cycleMin: number; cycleKm: number } {
+  const rideMin =
+    (pathLenM / 1000 / model.kmh) * 60 + Math.max(0, stopCount - 2) * (DWELL_SEC / 60);
+  const cycleKm = (2 * pathLenM) / 1000;
+  const refuelMin = model.tankKm > 0 ? (cycleKm / model.tankKm) * REFUEL_MIN : 0;
+  return {
+    cycleMin: 2 * rideMin + 2 * LAYOVER_MIN + 2 * (DWELL_SEC / 60) + refuelMin,
+    cycleKm,
+  };
+}
 import {
   BusSide, IconBank, IconClose, IconDepot, IconDownload, IconIdBadge, IconLock,
   IconPlus, IconUpload, IconWrench,
@@ -43,6 +77,10 @@ function MapOptionsPanel() {
   const basemapPref = useGame((s) => s.basemapPref);
   const basemapActive = useGame((s) => s.basemapActive);
   const toggleBasemap = useGame((s) => s.toggleBasemap);
+  const trafficView = useGame((s) => s.trafficView);
+  const trafficHour = useGame((s) => s.trafficHour);
+  const setTrafficView = useGame((s) => s.setTrafficView);
+  const setTrafficHour = useGame((s) => s.setTrafficHour);
   const pack = useGame((s) => s.pack);
 
   return (
@@ -69,6 +107,48 @@ function MapOptionsPanel() {
             Always
           </button>
         </div>
+      </div>
+      <div className="field">
+        <label>
+          Traffic forecast{' '}
+          <small className="dim">
+            {trafficView
+              ? `showing ${String(trafficHour).padStart(2, '0')}:00`
+              : '(color roads by congestion)'}
+          </small>
+        </label>
+        <div className="seg">
+          <button
+            className={!trafficView ? 'on' : ''}
+            onClick={() => setTrafficView(false)}
+          >
+            Off
+          </button>
+          <button
+            className={trafficView ? 'on' : ''}
+            onClick={() => setTrafficView(true)}
+            title="Tint main roads by how jammed they get"
+          >
+            On
+          </button>
+        </div>
+        {trafficView && (
+          <>
+            <input
+              type="range"
+              min={0}
+              max={23}
+              step={1}
+              value={trafficHour}
+              onChange={(e) => setTrafficHour(+e.target.value)}
+            />
+            <small className="dim">
+              Slide to preview any hour — green flows, red crawls. Rush peaks around
+              07–09 and 16–18; busy downtown corridors jam hardest, and strong bus
+              ridership eases it.
+            </small>
+          </>
+        )}
       </div>
       {pack?.meta.kind === 'real' && (
         <div className="field">
@@ -164,12 +244,25 @@ function LineEditPanel() {
   const stats = useGame((s) => s.stats);
   const fleet = useGame((s) => s.fleet);
   const draft = useGame((s) => s.draft);
+  const pack = useGame((s) => s.pack);
+  const allStops = useGame((s) => s.stops);
   const updateLine = useGame((s) => s.updateLine);
   const deleteLine = useGame((s) => s.deleteLine);
   const setPanel = useGame((s) => s.setPanel);
 
-  if (draft) return <DraftPanel />;
   const line = lines.find((l) => l.id === id);
+  const lineReach = useMemo(
+    () =>
+      reachPop(
+        pack,
+        (line?.stopIds ?? [])
+          .map((sid) => allStops.find((x) => x.id === sid)?.pt)
+          .filter((p): p is LngLat => !!p),
+      ),
+    [pack, line?.stopIds, allStops],
+  );
+
+  if (draft) return <DraftPanel />;
   if (!line) {
     return (
       <>
@@ -182,6 +275,9 @@ function LineEditPanel() {
   const model = busModel(line.modelId);
   const freeOfModel =
     fleetOwned(fleet, line.modelId) - fleetAssigned(lines, line.modelId);
+  const preview = cyclePreview(line.pathLenM, line.stopIds.length, model);
+  const cycleShown = st ? st.cycleMin : preview.cycleMin;
+  const refuels = st?.refuelsPerDay ?? 0;
 
   return (
     <>
@@ -206,9 +302,20 @@ function LineEditPanel() {
         <span>Route</span>
         <b>
           {line.stopIds.length} stops · {(line.pathLenM / 1000).toFixed(1)} km ·{' '}
-          {st ? `${Math.round(st.cycleMin)} min round trip` : ''}
+          {Math.round(cycleShown)} min round trip
         </b>
       </div>
+      <div className="kv">
+        <span>Within a short walk</span>
+        <b>{fmtInt(lineReach)} residents</b>
+      </div>
+      {refuels > 0 && (
+        <p className="hint">
+          Each bus burns through its {model.tankKm} km{' '}
+          {model.needsCharger ? 'charge' : 'tank'} {refuels}×/day — schedules already
+          include the top-up time back at the depot.
+        </p>
+      )}
 
       <div className="field">
         <label>Bus model</label>
@@ -252,7 +359,27 @@ function LineEditPanel() {
       </div>
 
       <div className="field">
-        <label>Frequency: every {line.headwayMin} min</label>
+        <label>
+          Rush-hour frequency: every {line.peakHeadwayMin ?? line.headwayMin} min{' '}
+          <small className="dim">(07–09 &amp; 16–18)</small>
+        </label>
+        <div className="seg wrap">
+          {HEADWAY_CHOICES.map((h) => (
+            <button
+              key={h}
+              className={(line.peakHeadwayMin ?? line.headwayMin) === h ? 'on' : ''}
+              onClick={() => updateLine(line.id, { peakHeadwayMin: h })}
+            >
+              {h}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="field">
+        <label>
+          Off-peak frequency: every {line.headwayMin} min{' '}
+          <small className="dim">(rest of the day)</small>
+        </label>
         <div className="seg wrap">
           {HEADWAY_CHOICES.map((h) => (
             <button
@@ -315,18 +442,27 @@ function LineEditPanel() {
             <b className="bad">{fmtMoney(st.dailyCost)}</b>
           </div>
           <div>
+            <small>· of which fuel</small>
+            <b className="bad">{fmtMoney(st.dailyFuelCost ?? 0)}</b>
+          </div>
+          <div>
             <small>Peak load</small>
             <b className={st.peakLoadFactor > 1 ? 'bad' : ''}>
               {Math.round(st.peakLoadFactor * 100)}%
             </b>
           </div>
+          <div>
+            <small>Round trip</small>
+            <b>{Math.round(st.cycleMin)} min</b>
+          </div>
         </div>
       )}
       {st && line.vehicles < st.vehiclesNeeded && line.active && (
         <p className="warn">
-          Only {st.vehiclesUsed} bus{st.vehiclesUsed === 1 ? '' : 'es'} running — headway
-          stretches to ~{Math.round(st.headwayEffMin)} min. Assign {st.vehiclesNeeded} for the
-          full timetable.
+          Only {st.vehiclesUsed} bus{st.vehiclesUsed === 1 ? '' : 'es'} running —
+          rush-hour headway stretches to ~
+          {Math.round(st.headwayEffPeakMin ?? st.headwayEffMin)} min. Assign{' '}
+          {st.vehiclesNeeded} for the full timetable.
         </p>
       )}
       {st && st.peakLoadFactor > 1 && (
@@ -443,10 +579,17 @@ function DraftPanel() {
   const cancel = useGame((s) => s.cancelDraft);
   const finish = useGame((s) => s.finishDraft);
   const existing = useGame((s) => s.stops);
-  const km = draft.legs.reduce((s, l) => s + l.lenM, 0) / 1000;
+  const pack = useGame((s) => s.pack);
+  const lenM = draft.legs.reduce((s, l) => s + l.lenM, 0);
+  const km = lenM / 1000;
   const existingIds = new Set(existing.map((s) => s.id));
   const newCount = draft.stops.filter((s) => !existingIds.has(s.id)).length;
   const buildCost = newCount * STOP_COST;
+  // schedule + reach preview while building (Sparrow as the baseline bus)
+  const mini = busModel('minibus');
+  const prev = cyclePreview(lenM, draft.stops.length, mini);
+  const rush = Math.round(prev.cycleMin * 1.45);
+  const reach = reachPop(pack, draft.stops.map((s) => s.pt));
   return (
     <>
       <PanelTitle title="Drawing new line" />
@@ -462,6 +605,20 @@ function DraftPanel() {
         <span>Length</span>
         <b>{km.toFixed(1)} km</b>
       </div>
+      {draft.stops.length >= 2 && (
+        <>
+          <div className="kv">
+            <span>Round trip ({mini.short})</span>
+            <b>
+              ~{Math.round(prev.cycleMin)} min · rush ~{rush}
+            </b>
+          </div>
+          <div className="kv">
+            <span>Within a short walk</span>
+            <b>{fmtInt(reach)} residents</b>
+          </div>
+        </>
+      )}
       <div className="kv">
         <span>Build cost</span>
         <b>{fmtMoney(buildCost)}</b>
@@ -546,7 +703,9 @@ function FleetPanel() {
                 <div>
                   <b>{m.name}</b>
                   <small>
-                    {m.capacity} riders · ${m.costPerKm.toFixed(2)}/km · {fmtMoney(m.price)}
+                    {m.capacity} riders · ${m.costPerKm.toFixed(2)}/km (
+                    {m.needsCharger ? 'charge' : 'gas'} ${m.fuelPerKm.toFixed(2)}) ·{' '}
+                    {m.tankKm} km {m.needsCharger ? 'battery' : 'tank'} · {fmtMoney(m.price)}
                   </small>
                 </div>
               </div>
@@ -927,6 +1086,7 @@ function FinancePanel() {
 
   const rev = stats?.perLine.reduce((s, p) => s + p.dailyRevenue, 0) ?? 0;
   const cost = stats?.perLine.reduce((s, p) => s + p.dailyCost, 0) ?? 0;
+  const fuel = stats?.perLine.reduce((s, p) => s + (p.dailyFuelCost ?? 0), 0) ?? 0;
 
   return (
     <>
@@ -945,10 +1105,18 @@ function FinancePanel() {
           <b className="bad">{fmtMoney(cost)}/day</b>
         </div>
         <div>
+          <small>· of which fuel</small>
+          <b className="bad">{fmtMoney(fuel)}/day</b>
+        </div>
+        <div>
           <small>Line profit</small>
           <b className={rev - cost >= 0 ? 'good' : 'bad'}>{fmtMoney(rev - cost)}/day</b>
         </div>
       </div>
+      <p className="hint">
+        Fuel is pumped at your depots — every kilometre a bus drives burns gas
+        (or charge) paid from company cash.
+      </p>
       <p className="hint">
         Fixed costs (depot upkeep, mechanics, office, loan interest) are charged on top,
         spread over the day.

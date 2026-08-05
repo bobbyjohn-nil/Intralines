@@ -1,6 +1,8 @@
-import { useGame } from '../game/store';
+import { useGame, busModel } from '../game/store';
 import { STOP_COST } from '../game/constants';
 import { IconCheck, IconClose, IconUndo } from './icons';
+import { cyclePreview, reachPop } from './Panels';
+import { fmtInt } from './format';
 
 /** floating helper bar while drawing a line or placing the depot */
 export function DraftBar() {
@@ -47,13 +49,21 @@ export function DraftBar() {
   }
   if (tool !== 'line-new' || !draft) return null;
   const cost = draft.stops.length * STOP_COST;
+  const lenM = draft.legs.reduce((s, l) => s + l.lenM, 0);
+  const prev = cyclePreview(lenM, draft.stops.length, busModel('minibus'));
+  const pack = useGame.getState().pack;
+  const reach =
+    draft.stops.length >= 2 ? reachPop(pack, draft.stops.map((s) => s.pt)) : 0;
   return (
     <div className="draftbar">
       <span>
         {draft.stops.length === 0
           ? `Click a street to place the first stop ($${STOP_COST / 1000}k each)`
-          : `${draft.stops.length} stops · $${(cost / 1000).toFixed(0)}k to build — ` +
-            'keep clicking, or finish'}
+          : draft.stops.length < 2
+            ? `${draft.stops.length} stop · $${(cost / 1000).toFixed(0)}k — keep clicking`
+            : `${draft.stops.length} stops · ${(lenM / 1000).toFixed(1)} km · ` +
+              `round trip ~${Math.round(prev.cycleMin)} min · ` +
+              `~${fmtInt(reach)} people in reach · $${(cost / 1000).toFixed(0)}k`}
       </span>
       <button className="btn with-icon" onClick={undo} disabled={!draft.stops.length}>
         <IconUndo size={14} /> Undo

@@ -15,6 +15,18 @@ export interface LogEntry {
 
 export const CHANGELOG: LogEntry[] = [
   {
+    version: '1.9',
+    date: 'Aug 5, 2026',
+    title: 'Timetables, gas and gridlock',
+    items: [
+      'Buses burn fuel: every model has a gas (or charge) price per km and a tank range, paid from company cash and pumped at your depots. The Finance panel and each line now itemize the fuel bill, worn engines guzzle more, and buses that outrun their tank lose top-up time back at the depot — the line panel tells you how often.',
+      'Time-of-day timetables: every line has separate rush-hour (07–09, 16–18) and off-peak frequencies. The sim staffs, costs and schedules each hour on its own — run tight peaks and thin quiet hours, and watch buses actually return to the depot mid-day.',
+      'Traffic forecast map: a new toggle in Map options tints main roads green-to-red by congestion at any hour you pick with a slider — busy downtown corridors jam hardest, and strong bus ridership visibly eases the reds.',
+      "Plan while you draw: the line-drawing bar and panel now show the round trip time, rush-hour estimate and how many residents live within a short walk of your stops — before you spend a dollar. The line editor shows the same reach number for existing routes.",
+      'The calendar now spells itself out — "Year 1 · Quarter 2 · Day 7" in the top bar, saves list and report cards.',
+    ],
+  },
+  {
     version: '1.8',
     date: 'Aug 5, 2026',
     title: 'A new calendar',

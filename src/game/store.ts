@@ -73,6 +73,9 @@ export interface GameState {
   selectedLineId: string | null;
   panel: Panel;
   heatmap: 'off' | 'pop' | 'jobs' | 'tour' | 'edu' | 'modes';
+  /** traffic forecast overlay: color roads by congestion at trafficHour */
+  trafficView: boolean;
+  trafficHour: number; // 0..23
   notices: Notice[];
   mapEpoch: number; // bumped when overlays must refresh
   /** 'auto' = online basemap tiles when reachable; 'offline' = never phone home */
@@ -96,6 +99,8 @@ export interface GameState {
   setTool: (t: Tool) => void;
   setPanel: (p: Panel) => void;
   setHeatmap: (h: 'off' | 'pop' | 'jobs' | 'tour' | 'edu' | 'modes') => void;
+  setTrafficView: (on: boolean) => void;
+  setTrafficHour: (h: number) => void;
   toggleBasemap: () => void;
   setBasemapActive: (m: 'online' | 'offline') => void;
   setStopLabels: (mode: 'zoom' | 'always') => void;
@@ -417,12 +422,15 @@ export const useGame = create<GameState>((set, get) => {
             stopDist: l.stopDist,
             pathLenM: l.pathLenM,
             headwayMin: l.headwayMin,
+            peakHeadwayMin: l.peakHeadwayMin ?? l.headwayMin,
             firstHour: l.firstHour,
             lastHour: l.lastHour,
             fare: l.fare,
             capacity: Math.round(m.capacity * perf.capMult),
             kmh: m.kmh,
             costPerKm: m.costPerKm * perf.costMult,
+            fuelPerKm: m.fuelPerKm * perf.costMult,
+            tankKm: m.tankKm,
             vehicles: effectiveVehicles.get(l.id) ?? 0,
             active: l.active && s.depots.length > 0,
           };
@@ -467,6 +475,8 @@ export const useGame = create<GameState>((set, get) => {
     selectedLineId: null,
     panel: 'help',
     heatmap: 'off',
+    trafficView: false,
+    trafficHour: 8,
     notices: [],
     mapEpoch: 0,
     basemapPref:
@@ -524,7 +534,11 @@ export const useGame = create<GameState>((set, get) => {
               cash: sv.cash,
               clockMin: sv.clockMin,
               stops: sv.stops,
-              lines: sv.lines,
+              // saves from before time-of-day frequencies
+              lines: sv.lines.map((l) => ({
+                ...l,
+                peakHeadwayMin: l.peakHeadwayMin ?? l.headwayMin,
+              })),
               depots,
               staff: sv.staff,
               // saves from before wear ratings and report cards
@@ -570,6 +584,7 @@ export const useGame = create<GameState>((set, get) => {
         selectedLineId: null,
         panel: saved ? 'none' : 'help',
         heatmap: 'off',
+        trafficView: false,
         mapEpoch: 0,
         ...base,
       });
@@ -737,6 +752,8 @@ export const useGame = create<GameState>((set, get) => {
 
     setPanel: (p) => set({ panel: p }),
     setHeatmap: (h) => set({ heatmap: h }),
+    setTrafficView: (on) => set({ trafficView: on }),
+    setTrafficHour: (h) => set({ trafficHour: Math.max(0, Math.min(23, Math.round(h))) }),
 
     toggleBasemap: () => {
       const pref = get().basemapPref === 'auto' ? 'offline' : 'auto';
@@ -1015,7 +1032,8 @@ export const useGame = create<GameState>((set, get) => {
         cum,
         stopDist,
         pathLenM: acc,
-        headwayMin: 12,
+        headwayMin: 15,
+        peakHeadwayMin: 8,
         firstHour: 6,
         lastHour: 22,
         fare: 2.25,

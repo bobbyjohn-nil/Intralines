@@ -26,7 +26,7 @@ interface SaveRow {
 
 function gameClock(clockMin: number): string {
   const { year, quarter, day, time } = fmtClock(clockMin);
-  return `Year ${year} Q${quarter}, Day ${day} · ${time}`;
+  return `Year ${year} Quarter ${quarter}, Day ${day} · ${time}`;
 }
 
 function money(n: number): string {

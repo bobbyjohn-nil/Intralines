@@ -94,6 +94,10 @@ export interface BusModelSpec {
   price: number;
   /** running cost $ / km (fuel + maintenance) */
   costPerKm: number;
+  /** the fuel (or charge) slice of costPerKm, paid at the depot pump */
+  fuelPerKm: number;
+  /** km of range on a full tank / charge */
+  tankKm: number;
   kmh: number;
   /** total riders served needed to unlock */
   unlockRiders: number;
@@ -117,7 +121,10 @@ export interface BusLine {
   /** distance (m) along path of each stop */
   stopDist: number[];
   pathLenM: number;
+  /** off-peak headway (minutes between buses) */
   headwayMin: number;
+  /** rush-hour headway (7-9 & 16-18); defaults to headwayMin on old saves */
+  peakHeadwayMin: number;
   firstHour: number;
   lastHour: number;
   fare: number;
@@ -137,10 +144,16 @@ export interface LineStats {
   dailyCost: number;
   vehiclesNeeded: number;
   cycleMin: number;
-  /** actual scheduled headway after fleet shortage stretching */
+  /** actual off-peak headway after fleet shortage stretching */
   headwayEffMin: number;
+  /** actual rush-hour headway after fleet shortage stretching */
+  headwayEffPeakMin: number;
   /** vehicles actually running (fleet- and driver-limited) */
   vehiclesUsed: number;
+  /** fuel spend included in dailyCost */
+  dailyFuelCost: number;
+  /** times each bus tops up at the depot per day (daily km vs tank) */
+  refuelsPerDay: number;
 }
 
 export interface NetworkStats {

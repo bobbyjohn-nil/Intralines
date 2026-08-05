@@ -7,11 +7,13 @@ import type { LngLat } from '../types';
 import {
   DWELL_SEC,
   HOURLY_PROFILE,
+  isPeakHour,
   LAYOVER_MIN,
   MAX_WALK_M,
   MAX_WAIT_MIN,
   MODE_TAU,
   CAPTIVE_SHARE,
+  REFUEL_MIN,
   STOP_TIER_WALK_BONUS,
   SUBSIDY_PER_RIDER,
   TRANSFER_PENALTY_MIN,
@@ -32,12 +34,15 @@ interface WLine {
   stopDist: number[];
   pathLenM: number;
   headwayMin: number;
+  peakHeadwayMin: number;
   firstHour: number;
   lastHour: number;
   fare: number;
   capacity: number;
   kmh: number;
   costPerKm: number;
+  fuelPerKm: number;
+  tankKm: number;
   vehicles: number;
   active: boolean;
 }
@@ -136,15 +141,35 @@ function computeNetwork(msg: NetworkMsg) {
   const lineCalc = lines.map((l) => {
     const rideMinFull =
       (l.pathLenM / 1000 / l.kmh) * 60 + (l.stopIds.length - 2) * (DWELL_SEC / 60);
-    const cycleMin = 2 * rideMinFull + 2 * LAYOVER_MIN + 2 * (DWELL_SEC / 60);
-    const vehiclesNeeded = Math.max(1, Math.ceil(cycleMin / l.headwayMin));
-    // short fleet => the schedule stretches
-    const headwayEff =
-      l.vehicles >= vehiclesNeeded ? l.headwayMin : cycleMin / Math.max(l.vehicles, 1);
+    // refuel time at the depot, amortized over the day's driving: a bus
+    // that burns half a tank per round trip loses half a fill-up of time
+    const cycleKm = (2 * l.pathLenM) / 1000;
+    const refuelMinPerCycle = l.tankKm > 0 ? (cycleKm / l.tankKm) * REFUEL_MIN : 0;
+    const cycleMin =
+      2 * rideMinFull + 2 * LAYOVER_MIN + 2 * (DWELL_SEC / 60) + refuelMinPerCycle;
+    const peakHeadway = l.peakHeadwayMin ?? l.headwayMin;
+    const tightest = Math.min(l.headwayMin, peakHeadway);
+    const vehiclesNeeded = Math.max(1, Math.ceil(cycleMin / tightest));
+    // short fleet => the schedule stretches (per time-of-day window)
+    const stretch = cycleMin / Math.max(l.vehicles, 1);
+    const headwayEff = Math.max(l.headwayMin, Math.min(stretch, cycleMin));
+    const headwayEffPeak = Math.max(peakHeadway, Math.min(stretch, cycleMin));
+    const effAt = (h: number) => (isPeakHour(h) ? headwayEffPeak : headwayEff);
+    // typical wait, demand-weighted across the service window
+    let wSum = 0;
+    let wEff = 0;
+    for (let h = l.firstHour; h < l.lastHour; h++) {
+      wSum += HOURLY_PROFILE[h];
+      wEff += HOURLY_PROFILE[h] * effAt(h);
+    }
+    const headwayForWait = wSum > 0 ? wEff / wSum : headwayEff;
     const stopsOnLine = l.stopIds
       .map((sid) => stopIndex.get(sid))
       .filter((x): x is number => x !== undefined);
-    return { l, rideMinFull, cycleMin, vehiclesNeeded, headwayEff, stopsOnLine };
+    return {
+      l, rideMinFull, cycleMin, cycleKm, vehiclesNeeded, headwayEff, headwayEffPeak,
+      effAt, headwayForWait, stopsOnLine,
+    };
   });
 
   // stop -> lines serving it (with position index on the line)
@@ -278,7 +303,7 @@ function computeNetwork(msg: NetworkMsg) {
         if (!bLines) continue;
         for (let x = 0; x < Math.min(aLines.length, LINES_LIMIT); x++) {
           const la = aLines[x];
-          const waitA = Math.min(lineCalc[la.li].headwayEff / 2, MAX_WAIT_MIN);
+          const waitA = Math.min(lineCalc[la.li].headwayForWait / 2, MAX_WAIT_MIN);
           for (let y = 0; y < Math.min(bLines.length, LINES_LIMIT); y++) {
             const lb = bLines[y];
             if (la.li === lb.li) {
@@ -299,7 +324,7 @@ function computeNetwork(msg: NetworkMsg) {
                 rideMin(la.li, la.pos, sh.posA) +
                 TRANSFER_PENALTY_MIN +
                 sh.walkMin +
-                Math.min(lineCalc[lb.li].headwayEff / 2, MAX_WAIT_MIN) +
+                Math.min(lineCalc[lb.li].headwayForWait / 2, MAX_WAIT_MIN) +
                 rideMin(lb.li, sh.posB, lb.pos) +
                 b.walkMin;
               if (t < best) {
@@ -348,7 +373,7 @@ function computeNetwork(msg: NetworkMsg) {
               const riders = flow * share; // one-way commuters choosing the bus
               totalRiders += riders * 2; // round trips
               weightedWait +=
-                riders * 2 * Math.min(lineCalc[bt.l1].headwayEff / 2, MAX_WAIT_MIN);
+                riders * 2 * Math.min(lineCalc[bt.l1].headwayForWait / 2, MAX_WAIT_MIN);
               boardings[bt.l1] += riders * 2;
               if (bt.l2 >= 0) boardings[bt.l2] += riders * 2;
             } else {
@@ -378,10 +403,17 @@ function computeNetwork(msg: NetworkMsg) {
     );
     let daily = boardings[li] * windowShare;
 
-    // crowding: peak-hour demand vs offered capacity (both directions)
-    const peakShare = Math.max(...HOURLY_PROFILE.slice(l.firstHour, l.lastHour), 0.01);
+    // crowding: demand at the busiest hour vs capacity offered THAT hour
+    let peakShare = 0.01;
+    let peakHour = l.firstHour;
+    for (let h = l.firstHour; h < l.lastHour; h++) {
+      if (HOURLY_PROFILE[h] > peakShare) {
+        peakShare = HOURLY_PROFILE[h];
+        peakHour = h;
+      }
+    }
     const peakRiders = daily * peakShare;
-    const tripsPerHour = 60 / lc.headwayEff;
+    const tripsPerHour = 60 / lc.effAt(peakHour);
     const offered = tripsPerHour * l.capacity * 2;
     const loadFactor = offered > 0 ? peakRiders / offered : 0;
     if (loadFactor > 1) daily *= Math.sqrt(1 / loadFactor); // riders give up
@@ -390,12 +422,31 @@ function computeNetwork(msg: NetworkMsg) {
       h >= l.firstHour && h < l.lastHour ? (daily * p) / windowShare : 0,
     );
 
-    const serviceMin = (l.lastHour - l.firstHour) * 60;
-    const cyclesPerDay = serviceMin / lc.headwayEff;
-    const vkmPerDay = (cyclesPerDay * 2 * l.pathLenM) / 1000;
-    const driverHours = Math.min(l.vehicles, lc.vehiclesNeeded) * (serviceMin / 60);
+    // departures follow the time-of-day timetable; drivers clock in only
+    // for buses actually rolling that hour
+    let tripsPerDay = 0;
+    let driverHours = 0;
+    for (let h = l.firstHour; h < l.lastHour; h++) {
+      const eff = lc.effAt(h);
+      tripsPerDay += 60 / eff;
+      driverHours += Math.min(
+        l.vehicles,
+        Math.max(1, Math.ceil(lc.cycleMin / eff)),
+      );
+    }
+    const vkmPerDay = (tripsPerDay * 2 * l.pathLenM) / 1000;
+    // fuel is bought at the depot pump; the workshop discount and the
+    // no-mechanic surcharge apply to the maintenance slice only
+    const fuelPerKm = Math.min(l.fuelPerKm, l.costPerKm);
+    const dailyFuelCost = vkmPerDay * fuelPerKm;
     const dailyCost =
-      vkmPerDay * l.costPerKm * msg.costMult + driverHours * DRIVER_WAGE_PER_HOUR;
+      dailyFuelCost +
+      vkmPerDay * (l.costPerKm - fuelPerKm) * msg.costMult +
+      driverHours * DRIVER_WAGE_PER_HOUR;
+    const vehiclesUsed = Math.min(l.vehicles, lc.vehiclesNeeded);
+    const kmPerBus = vkmPerDay / Math.max(vehiclesUsed, 1);
+    const refuelsPerDay =
+      l.tankKm > 0 ? Math.max(0, Math.ceil(kmPerBus / l.tankKm) - 1) : 0;
 
     return {
       lineId: l.id,
@@ -407,7 +458,10 @@ function computeNetwork(msg: NetworkMsg) {
       vehiclesNeeded: lc.vehiclesNeeded,
       cycleMin: lc.cycleMin,
       headwayEffMin: lc.headwayEff,
-      vehiclesUsed: Math.min(l.vehicles, lc.vehiclesNeeded),
+      headwayEffPeakMin: lc.headwayEffPeak,
+      vehiclesUsed,
+      dailyFuelCost,
+      refuelsPerDay,
     };
   });
 

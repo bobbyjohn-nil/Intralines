@@ -421,6 +421,115 @@ export function updateDraftCursor(map: MLMap, from: LngLat | null, to: LngLat | 
   });
 }
 
+// ---------------------------------------------------------------------------
+// Traffic forecast overlay: main roads tinted by how congested they get at a
+// chosen hour. Each edge's sensitivity ("gain") to citywide rush hour comes
+// from how urban its surroundings are and whether it's a main road — the
+// same recipe the bus animation uses to slow buses down.
+
+import { trafficFactor } from '../game/constants';
+
+let trafficFeatures: GeoJSON.Feature[] | null = null;
+let trafficCity: string | null = null;
+
+function buildTrafficFeatures(pack: CityPack): GeoJSON.Feature[] {
+  const CELLD = 0.008;
+  const dgrid = new Map<string, number>();
+  const dens: number[] = [];
+  for (const bg of pack.blockGroups) {
+    const d = (bg.pop + bg.jobs) / Math.max(bg.areaKm2, 0.05);
+    dens.push(d);
+    const k = `${Math.floor(bg.centroid[0] / CELLD)}:${Math.floor(bg.centroid[1] / CELLD)}`;
+    dgrid.set(k, Math.max(dgrid.get(k) ?? 0, d));
+  }
+  const sorted = [...dens].sort((a, b) => a - b);
+  const norm = sorted[Math.floor(sorted.length * 0.85)] || 1;
+  const urbanAt = (pt: LngLat): number => {
+    const gx = Math.floor(pt[0] / CELLD);
+    const gy = Math.floor(pt[1] / CELLD);
+    let best = 0;
+    for (let x = gx - 1; x <= gx + 1; x++) {
+      for (let y = gy - 1; y <= gy + 1; y++) {
+        best = Math.max(best, dgrid.get(`${x}:${y}`) ?? 0);
+      }
+    }
+    return Math.min(best / norm, 1);
+  };
+  const feats: GeoJSON.Feature[] = [];
+  for (const e of pack.edges) {
+    if (e.kmh < 35) continue; // local lanes barely feel rush hour
+    const a = pack.nodes[e.a];
+    const b = pack.nodes[e.b];
+    if (!a || !b) continue;
+    const mid: LngLat = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+    const gain = urbanAt(mid) * (1.2 + 1.2 * (e.kmh >= 42 ? 1 : 0.4)) + 0.08;
+    feats.push({
+      type: 'Feature',
+      properties: { gain: Math.round(gain * 100) / 100 },
+      geometry: { type: 'LineString', coordinates: [a, ...e.pts, b] },
+    });
+  }
+  return feats;
+}
+
+export function updateTraffic(
+  map: MLMap,
+  pack: CityPack,
+  on: boolean,
+  hour: number,
+  relief = 1,
+): void {
+  if (!map.getSource('traffic-src')) {
+    map.addSource('traffic-src', { type: 'geojson', data: EMPTY });
+  }
+  if (!map.getLayer('traffic-lines')) {
+    map.addLayer(
+      {
+        id: 'traffic-lines',
+        type: 'line',
+        source: 'traffic-src',
+        layout: { 'line-cap': 'round', 'line-join': 'round', visibility: 'none' },
+        paint: {
+          'line-width': ['interpolate', ['linear'], ['zoom'], 11, 1.6, 14, 4, 16.5, 8],
+          'line-opacity': 0.8,
+        },
+      },
+      map.getLayer('lines-halo') ? 'lines-halo' : undefined,
+    );
+  }
+  if (!on) {
+    map.setLayoutProperty('traffic-lines', 'visibility', 'none');
+    return;
+  }
+  if (trafficCity !== pack.meta.id || !trafficFeatures) {
+    trafficFeatures = buildTrafficFeatures(pack);
+    trafficCity = pack.meta.id;
+  }
+  // (re)load data if this map instance hasn't seen this city's edges yet
+  const holder = map as MLMap & { __trafficCity?: string };
+  if (holder.__trafficCity !== pack.meta.id) {
+    setData(map, 'traffic-src', {
+      type: 'FeatureCollection',
+      features: trafficFeatures,
+    });
+    holder.__trafficCity = pack.meta.id;
+  }
+  map.setLayoutProperty('traffic-lines', 'visibility', 'visible');
+  const base = trafficFactor(hour);
+  const eff = base >= 1 ? 1 + (base - 1) * relief : base;
+  const cong: ExpressionSpecification = [
+    '+', 1, ['*', eff - 1, ['get', 'gain']],
+  ] as ExpressionSpecification;
+  map.setPaintProperty('traffic-lines', 'line-color', [
+    'interpolate', ['linear'], cong,
+    0.95, '#3d9d50',
+    1.08, '#8fbf3e',
+    1.2, '#f0b41e',
+    1.35, '#ee7c1b',
+    1.55, '#dd3d3d',
+  ]);
+}
+
 export function updateDepots(map: MLMap, pts: LngLat[]): void {
   setData(
     map,

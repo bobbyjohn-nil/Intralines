@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { MercatorCoordinate } from 'maplibre-gl';
 import type { CustomLayerInterface, Map as MLMap } from 'maplibre-gl';
 import type { BusLine, LineStats, LngLat, Stop } from '../game/types';
-import { DWELL_SEC, LAYOVER_MIN, trafficFactor } from '../game/constants';
+import { DWELL_SEC, isPeakHour, LAYOVER_MIN, trafficFactor } from '../game/constants';
 import { busModel } from '../game/store';
 import { pointAlong } from '../game/routing';
 
@@ -56,7 +56,10 @@ export interface LineExtras {
 interface LineAnim {
   line: BusLine;
   vehicles: number;
+  /** tightest (rush-hour) effective headway — sets the departure stagger */
   headwayEff: number;
+  /** buses actually rolling at a given clock hour (off-peak thins out) */
+  activeAt: (hour: number) => number;
   segs: DriveSeg[];
   outboundMin: number;
   cycleMin: number;
@@ -373,10 +376,17 @@ export class BusLayer3D implements CustomLayerInterface {
         const midHour = ((i - 0.5) * TAU_STEP) / 60;
         tau[i] = tau[i - 1] + TAU_STEP / congAt(midHour);
       }
+      const effPeak = st.headwayEffPeakMin ?? st.headwayEffMin;
+      const activeAt = (hour: number): number =>
+        Math.min(
+          st.vehiclesUsed,
+          Math.max(1, Math.ceil(st.cycleMin / (isPeakHour(hour) ? effPeak : st.headwayEffMin))),
+        );
       this.anims.push({
         line,
         vehicles: st.vehiclesUsed,
-        headwayEff: st.headwayEffMin,
+        headwayEff: Math.min(effPeak, st.headwayEffMin),
+        activeAt,
         segs,
         outboundMin,
         cycleMin,
@@ -577,28 +587,36 @@ export class BusLayer3D implements CustomLayerInterface {
         }
         const tauDep = tauAt(a, firstDep);
         if (dp && tauNow >= tauDep - deadMin && tauNow < tauDep) {
-          // pull-out: rolls from the depot to the first stop before service
-          const tSec = (tauNow - (tauDep - deadMin)) * 60;
-          const d = kinematicDist(dp.lenM, deadMin * 60, tSec);
-          const { pt, bearing } = this.bearingAlong(dp.path, dp.cum, dp.lenM, d, true);
-          hit = { pt, bearing, lineD: null };
+          // pull-out: rolls from the depot to the first stop before service —
+          // but only if this bus is on the roster for the opening hour
+          if (k < a.activeAt(firstDep / 60)) {
+            const tSec = (tauNow - (tauDep - deadMin)) * 60;
+            const d = kinematicDist(dp.lenM, deadMin * 60, tSec);
+            const { pt, bearing } = this.bearingAlong(dp.path, dp.cum, dp.lenM, d, true);
+            hit = { pt, bearing, lineD: null };
+          }
         } else if (tauNow >= tauDep) {
           const since = tauNow - tauDep;
           const lastDepartureCutoff = tauAt(a, svcEnd) - tauDep;
           const cycleIdx = Math.floor(since / a.cycleMin);
           const cycleStart = cycleIdx * a.cycleMin;
-          if (cycleStart <= lastDepartureCutoff) {
+          // off-peak the timetable thins out: buses beyond the hour's
+          // roster sit this cycle out at the depot
+          const hourAtDep = ((firstDep + cycleStart) / 60) % 24;
+          if (cycleStart <= lastDepartureCutoff && k < a.activeAt(hourAtDep)) {
             const tProfile = since - cycleStart;
             const pos = this.distAt(a, tProfile, cycleIdx, k, cong);
             if (pos) {
               const { pt, bearing } = this.smoothBearing(line, pos.d, pos.forward);
               hit = { pt, bearing: pos.forward ? bearing : bearing + 180, lineD: pos.d };
             }
-          } else if (dp) {
-            // service over: one last drive home to the depot
+          } else if (dp && cycleStart > lastDepartureCutoff) {
+            // service over: one last drive home to the depot (only for
+            // buses that actually ran the closing cycle)
             const lastIdx = Math.floor(lastDepartureCutoff / a.cycleMin);
+            const lastHour = ((firstDep + lastIdx * a.cycleMin) / 60) % 24;
             const tHome = since - (lastIdx + 1) * a.cycleMin;
-            if (tHome >= 0 && tHome < deadMin) {
+            if (tHome >= 0 && tHome < deadMin && k < a.activeAt(lastHour)) {
               const tSec = tHome * 60;
               const d = kinematicDist(dp.lenM, deadMin * 60, tSec);
               const { pt, bearing } = this.bearingAlong(
