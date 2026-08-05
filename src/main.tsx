@@ -14,3 +14,14 @@ try {
 
 // No StrictMode: the MapLibre map + WebGL bus layer must not double-mount.
 createRoot(document.getElementById('root')!).render(<App />);
+
+// the CSS sibling rule hides the boot splash once #root has content; remove
+// it outright as well (after the first real render) so no stacking-context
+// quirk can leave it around
+const clearSplash = (): void => {
+  const el = document.getElementById('boot-splash');
+  if (!el) return;
+  if (document.getElementById('root')?.childElementCount) el.remove();
+  else requestAnimationFrame(clearSplash);
+};
+requestAnimationFrame(clearSplash);

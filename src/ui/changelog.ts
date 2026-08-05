@@ -15,6 +15,16 @@ export interface LogEntry {
 
 export const CHANGELOG: LogEntry[] = [
   {
+    version: '1.11',
+    date: 'Aug 5, 2026',
+    title: 'Never a blank page',
+    items: [
+      'A loading splash appears the instant the page opens, so a broken start can never be a silent white screen — if the game fails to boot you now always get either the splash or, within a few seconds, the recovery panel with Reload and Clear-map-cache buttons.',
+      'New hosting check at /status.html — if that page loads but the game doesn’t, the problem is in your browser cache, not the server.',
+      'Note: the game’s address is https://bobbyjohn-nil.github.io/Intralines/ — update old bookmarks.',
+    ],
+  },
+  {
     version: '1.10',
     date: 'Aug 5, 2026',
     title: 'Standing room only',

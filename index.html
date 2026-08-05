@@ -40,6 +40,8 @@
         setTimeout(function () {
           var root = document.getElementById('root');
           if (!root || root.childElementCount > 0) return; // app is up
+          var splash = document.getElementById('boot-splash');
+          if (splash) splash.remove();
           root.innerHTML =
             '<div style="max-width:560px;margin:80px auto;padding:24px;font-family:system-ui,sans-serif;' +
             'background:#fffdf6;border:1px solid #d0c7ae;border-radius:14px;color:#2c2a24">' +
@@ -69,12 +71,45 @@
             }
             location.reload();
           };
-        }, 6000);
+        }, 4000);
       })();
     </script>
   </head>
   <body>
     <div id="root"></div>
+    <!-- instant boot splash: pure inline HTML/CSS so it shows even when every
+         other asset fails to load. Hidden the moment the app renders. -->
+    <div id="boot-splash">
+      <div class="bs-card">
+        <div class="bs-bus">🚌</div>
+        <b>Intralines</b>
+        <span>Loading the city…</span>
+        <div class="bs-bar"><i></i></div>
+      </div>
+    </div>
+    <style>
+      #root:not(:empty) + #boot-splash { display: none; }
+      #boot-splash {
+        position: fixed; inset: 0; display: grid; place-items: center;
+        background: #f3edda; font-family: system-ui, sans-serif; color: #2c2a24;
+      }
+      #boot-splash .bs-card { text-align: center; }
+      #boot-splash .bs-bus { font-size: 42px; }
+      #boot-splash b { display: block; font-size: 22px; margin: 6px 0 2px; }
+      #boot-splash span { opacity: 0.65; font-size: 14px; }
+      #boot-splash .bs-bar {
+        width: 180px; height: 6px; margin: 14px auto 0; border-radius: 4px;
+        background: rgba(60, 55, 40, 0.15); overflow: hidden;
+      }
+      #boot-splash .bs-bar i {
+        display: block; width: 40%; height: 100%; border-radius: 4px;
+        background: #2c2a24; animation: bs-slide 1.1s ease-in-out infinite;
+      }
+      @keyframes bs-slide {
+        0% { transform: translateX(-100%); }
+        100% { transform: translateX(350%); }
+      }
+    </style>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
