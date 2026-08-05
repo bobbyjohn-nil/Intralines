@@ -98,7 +98,7 @@ export function Toolbar() {
   const setPanel = useGame((s) => s.setPanel);
   const heatmap = useGame((s) => s.heatmap);
   const setHeatmap = useGame((s) => s.setHeatmap);
-  const depot = useGame((s) => s.depot);
+  const hasDepot = useGame((s) => s.depots.length > 0);
   const pack = useGame((s) => s.pack);
 
   const togglePanel = (p: Panel) => setPanel(panel === p ? 'none' : p);
@@ -121,7 +121,7 @@ export function Toolbar() {
         <IconPlus />
         <span>New line</span>
       </button>
-      {!depot && (
+      {!hasDepot && (
         <button
           className={`pulse ${tool === 'depot-place' ? 'on' : ''}`}
           onClick={() => setTool('depot-place')}

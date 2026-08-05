@@ -1,9 +1,10 @@
 import { useRef } from 'react';
 import {
-  busModel, driversNeeded, fleetAssigned, fleetOwned, fleetTotal, useGame,
+  busModel, depotCapacity, driversNeeded, fleetAssigned, fleetOwned, fleetTotal, useGame,
 } from '../game/store';
 import {
-  BUSES_PER_MECHANIC, BUS_MODELS, CHARGERS_COST, DEPOT_CAPACITY, DEPOT_UPGRADE_COST,
+  BUSES_PER_MECHANIC, BUS_MODELS, CHARGERS_COST, DEPOT_CAPACITY, DEPOT_COST,
+  DEPOT_UPGRADE_COST,
   DRIVER_WAGE_PER_HOUR, HEADWAY_CHOICES, LOAN_AMOUNT, LOAN_FEE, LOAN_PAYOFF,
   LOAN_WEEKLY_INTEREST, MECHANIC_WAGE_PER_DAY, STOP_COST, STOP_TIER_NAMES,
   STOP_UPGRADE_COST, SUBSIDY_PER_RIDER, WASH_BAY_COST, WORKSHOP_COST,
@@ -482,12 +483,12 @@ function FleetPanel() {
   const fleet = useGame((s) => s.fleet);
   const lines = useGame((s) => s.lines);
   const cash = useGame((s) => s.cash);
-  const depot = useGame((s) => s.depot);
+  const depots = useGame((s) => s.depots);
   const riders = useGame((s) => s.totalRidersServed);
   const buyBus = useGame((s) => s.buyBus);
   const sellBus = useGame((s) => s.sellBus);
 
-  const cap = depot ? DEPOT_CAPACITY[depot.level] : 0;
+  const cap = depotCapacity(depots);
   return (
     <>
       <PanelTitle title="Fleet" />
@@ -497,20 +498,22 @@ function FleetPanel() {
           {fleetTotal(fleet)} / {cap || '—'}
         </b>
       </div>
-      {!depot && <p className="warn">Build a depot first — use “Place depot” in the bottom bar.</p>}
+      {!depots.length && (
+        <p className="warn">Build a depot first — use “Place depot” in the bottom bar.</p>
+      )}
       <div className="list">
         {BUS_MODELS.map((m) => {
           const owned = fleetOwned(fleet, m.id);
           const assigned = fleetAssigned(lines, m.id);
           const locked = riders < m.unlockRiders;
-          const chargerBlock = m.needsCharger && !depot?.chargers;
-          const depotFull = !!depot && fleetTotal(fleet) >= cap;
+          const chargerBlock = m.needsCharger && !depots.some((d) => d.chargers);
+          const depotFull = depots.length > 0 && fleetTotal(fleet) >= cap;
           const shortBy = m.price - cash;
           // exactly one reason shows, in the order a player can fix them
-          const blocker = !depot
+          const blocker = !depots.length
             ? 'Build a depot first.'
             : depotFull
-              ? 'Depot is full — upgrade it for more parking.'
+              ? 'Depots are full — upgrade one or build another.'
               : chargerBlock
                 ? 'Needs chargers — add them in the Depot panel.'
                 : shortBy > 0
@@ -627,14 +630,29 @@ function StaffPanel() {
 
 // ---------------------------------------------------------------------------
 
+const DEPOT_ADDONS: {
+  key: 'workshop' | 'washBay' | 'chargers';
+  label: string;
+  desc: string;
+  cost: number;
+}[] = [
+  { key: 'workshop', label: 'Workshop', desc: '−25% running costs', cost: WORKSHOP_COST },
+  { key: 'washBay', label: 'Wash bay', desc: '+satisfaction', cost: WASH_BAY_COST },
+  { key: 'chargers', label: 'Chargers', desc: 'enables electric buses', cost: CHARGERS_COST },
+];
+
 function DepotPanel() {
-  const depot = useGame((s) => s.depot);
+  const depots = useGame((s) => s.depots);
+  const fleet = useGame((s) => s.fleet);
   const cash = useGame((s) => s.cash);
+  const tool = useGame((s) => s.tool);
   const setTool = useGame((s) => s.setTool);
   const upgradeDepot = useGame((s) => s.upgradeDepot);
+  const renameDepot = useGame((s) => s.renameDepot);
   const buyDepotAddon = useGame((s) => s.buyDepotAddon);
+  const saveGame = useGame((s) => s.saveGame);
 
-  if (!depot) {
+  if (!depots.length) {
     return (
       <>
         <PanelTitle title="Depot" />
@@ -643,83 +661,91 @@ function DepotPanel() {
           starts and ends its day here.
         </p>
         <button className="btn primary with-icon" onClick={() => setTool('depot-place')}>
-          <IconDepot size={15} /> Place depot ({fmtMoney(150000)})
+          <IconDepot size={15} /> Place depot ({fmtMoney(DEPOT_COST)})
         </button>
       </>
     );
   }
-  const nextCost = DEPOT_UPGRADE_COST[depot.level + 1];
   return (
     <>
-      <PanelTitle title={`Depot — level ${depot.level}`} />
+      <PanelTitle title={depots.length === 1 ? 'Depot' : 'Depots'} />
       <div className="kv">
         <span>Bus capacity</span>
-        <b>{DEPOT_CAPACITY[depot.level]}</b>
+        <b>
+          {fleetTotal(fleet)} / {depotCapacity(depots)}
+        </b>
       </div>
-      {depot.level < 3 && (
-        <>
-          <button
-            className="btn primary"
-            disabled={cash < nextCost}
-            title={
-              cash < nextCost
-                ? `Need ${fmtMoney(nextCost)} — you're ${fmtMoney(nextCost - cash)} short.`
-                : ''
-            }
-            onClick={upgradeDepot}
-          >
-            Upgrade to level {depot.level + 1} ({fmtMoney(nextCost)}) →{' '}
-            {DEPOT_CAPACITY[depot.level + 1]} buses
-          </button>
-          {cash < nextCost && (
-            <p className="blocker">
-              Need {fmtMoney(nextCost)} — you're {fmtMoney(nextCost - cash)} short.
-            </p>
-          )}
-        </>
+      {depots.length > 1 && (
+        <p className="hint">Buses pull out from whichever depot is closest to their line.</p>
       )}
-      <div className="card">
-        <b>Workshop</b>
-        <small>−25% running costs</small>
-        {depot.workshop ? (
-          <p className="good">✓ Built</p>
-        ) : (
-          <button
-            className="btn" disabled={cash < WORKSHOP_COST}
-            onClick={() => buyDepotAddon('workshop')}
-          >
-            Build ({fmtMoney(WORKSHOP_COST)})
-          </button>
-        )}
+      <div className="list">
+        {depots.map((d) => {
+          const nextCost = DEPOT_UPGRADE_COST[d.level + 1];
+          return (
+            <div key={d.id} className="card">
+              <input
+                className="depot-name-input"
+                value={d.name}
+                maxLength={28}
+                aria-label="Depot name"
+                onChange={(e) => renameDepot(d.id, e.target.value)}
+                onBlur={() => saveGame()}
+              />
+              <small>
+                Level {d.level} · {DEPOT_CAPACITY[d.level]} bus spaces
+              </small>
+              {d.level < 3 && (
+                <button
+                  className="btn primary"
+                  disabled={cash < nextCost}
+                  title={
+                    cash < nextCost
+                      ? `Need ${fmtMoney(nextCost)} — you're ${fmtMoney(nextCost - cash)} short.`
+                      : ''
+                  }
+                  onClick={() => upgradeDepot(d.id)}
+                >
+                  Upgrade to level {d.level + 1} ({fmtMoney(nextCost)}) →{' '}
+                  {DEPOT_CAPACITY[d.level + 1]} buses
+                </button>
+              )}
+              {DEPOT_ADDONS.map((a) => (
+                <div key={a.key} className="addon-row">
+                  <span>
+                    <b>{a.label}</b> <small className="dim">{a.desc}</small>
+                  </span>
+                  {d[a.key] ? (
+                    <span className="good">✓ Built</span>
+                  ) : (
+                    <button
+                      className="btn"
+                      disabled={cash < a.cost}
+                      onClick={() => buyDepotAddon(d.id, a.key)}
+                    >
+                      Build ({fmtMoney(a.cost)})
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          );
+        })}
       </div>
-      <div className="card">
-        <b>Wash bay</b>
-        <small>Shiny buses, happier riders (+satisfaction)</small>
-        {depot.washBay ? (
-          <p className="good">✓ Built</p>
-        ) : (
-          <button
-            className="btn" disabled={cash < WASH_BAY_COST}
-            onClick={() => buyDepotAddon('washBay')}
-          >
-            Build ({fmtMoney(WASH_BAY_COST)})
-          </button>
-        )}
-      </div>
-      <div className="card">
-        <b>Chargers</b>
-        <small>Required for electric buses</small>
-        {depot.chargers ? (
-          <p className="good">✓ Built</p>
-        ) : (
-          <button
-            className="btn" disabled={cash < CHARGERS_COST}
-            onClick={() => buyDepotAddon('chargers')}
-          >
-            Build ({fmtMoney(CHARGERS_COST)})
-          </button>
-        )}
-      </div>
+      <button
+        className={`btn with-icon ${tool === 'depot-place' ? 'primary' : ''}`}
+        disabled={cash < DEPOT_COST}
+        title={
+          cash < DEPOT_COST
+            ? `Need ${fmtMoney(DEPOT_COST)} — you're ${fmtMoney(DEPOT_COST - cash)} short.`
+            : 'Then click the map where the new depot should go'
+        }
+        onClick={() => setTool('depot-place')}
+      >
+        <IconDepot size={15} />{' '}
+        {tool === 'depot-place'
+          ? 'Click the map to place it…'
+          : `Build another depot (${fmtMoney(DEPOT_COST)})`}
+      </button>
     </>
   );
 }

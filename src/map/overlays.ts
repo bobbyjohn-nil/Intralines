@@ -421,16 +421,18 @@ export function updateDraftCursor(map: MLMap, from: LngLat | null, to: LngLat | 
   });
 }
 
-export function updateDepot(map: MLMap, pt: LngLat | null): void {
+export function updateDepots(map: MLMap, pts: LngLat[]): void {
   setData(
     map,
     'depot-src',
-    pt
+    pts.length
       ? {
           type: 'FeatureCollection',
-          features: [
-            { type: 'Feature', properties: {}, geometry: { type: 'Point', coordinates: pt } },
-          ],
+          features: pts.map((pt) => ({
+            type: 'Feature',
+            properties: {},
+            geometry: { type: 'Point', coordinates: pt },
+          })),
         }
       : EMPTY,
   );

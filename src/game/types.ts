@@ -153,6 +153,9 @@ export interface NetworkStats {
 }
 
 export interface Depot {
+  id: string;
+  /** player-editable; defaults to the nearest street's name */
+  name: string;
   pt: LngLat;
   node: number;
   level: number; // 1..3
@@ -186,7 +189,9 @@ export interface SaveGame {
   clockMin: number;
   stops: Stop[];
   lines: BusLine[];
-  depot: Depot | null;
+  depots: Depot[];
+  /** legacy single depot from saves written before multi-depot support */
+  depot?: Depot | null;
   staff: Staff;
   fleet: FleetEntry[];
   totalRidersServed: number;

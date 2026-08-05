@@ -5,12 +5,13 @@ import type { CityPack } from '../game/types';
 import { useGame } from '../game/store';
 import { buildPackStyle, buildRealStyle, PALETTE } from './basemapStyle';
 import {
-  addBoundaryMask, ensureOverlays, MODE_COLORS, updateDepot, updateDraft, updateDraftCursor,
+  addBoundaryMask, ensureOverlays, MODE_COLORS, updateDepots, updateDraft, updateDraftCursor,
   updateHeatmap, updateNetwork,
 } from './overlays';
 import { BusLayer3D } from './busLayer3d';
 import type { LineExtras } from './busLayer3d';
 import { cumulativeDist } from '../game/routing';
+import { fastDistM } from '../game/geo';
 
 /** quick probe: can we actually reach the tile server? */
 async function tilesReachable(): Promise<boolean> {
@@ -33,7 +34,7 @@ export function MapView({ pack }: { pack: CityPack }) {
   const mapRef = useRef<MLMap | null>(null);
   const busLayerRef = useRef<BusLayer3D | null>(null);
   const readyRef = useRef(false);
-  const depotMarkerRef = useRef<maplibregl.Marker | null>(null);
+  const depotMarkersRef = useRef<Map<string, maplibregl.Marker>>(new Map());
   const chipsRef = useRef<Map<string, maplibregl.Marker>>(new Map());
   const labelsRef = useRef<Map<string, maplibregl.Marker>>(new Map());
   const popupRef = useRef<maplibregl.Popup | null>(null);
@@ -43,7 +44,7 @@ export function MapView({ pack }: { pack: CityPack }) {
   const selectedLineId = useGame((s) => s.selectedLineId);
   const draft = useGame((s) => s.draft);
   const heatmap = useGame((s) => s.heatmap);
-  const depot = useGame((s) => s.depot);
+  const depots = useGame((s) => s.depots);
   const stats = useGame((s) => s.stats);
   const tool = useGame((s) => s.tool);
   const basemapPref = useGame((s) => s.basemapPref);
@@ -342,8 +343,8 @@ export function MapView({ pack }: { pack: CityPack }) {
       popupRef.current?.remove();
       popupRef.current = null;
       readyRef.current = false;
-      depotMarkerRef.current?.remove();
-      depotMarkerRef.current = null;
+      depotMarkersRef.current.forEach((m) => m.remove());
+      depotMarkersRef.current.clear();
       map?.remove();
       mapRef.current = null;
     };
@@ -432,10 +433,19 @@ export function MapView({ pack }: { pack: CityPack }) {
         mainShare: samples ? mainCnt / samples : 0.5,
         relief,
       };
-      // deadhead: real street route from the depot to the first stop
+      // deadhead: street route from the closest depot to the first stop
       const first = st.stops.find((x) => x.id === l.stopIds[0]);
-      if (st.depot && first) {
-        const r = g.route(st.depot.node, first.node);
+      if (st.depots.length && first) {
+        let home = st.depots[0];
+        let bestM = Infinity;
+        for (const d of st.depots) {
+          const dm = fastDistM(d.pt, first.pt, cosLat);
+          if (dm < bestM) {
+            bestM = dm;
+            home = d;
+          }
+        }
+        const r = g.route(home.node, first.node);
         if (r && r.path.length >= 2) {
           const cum = cumulativeDist(r.path, cosLat);
           extras.depotPath = { path: r.path, cum, lenM: cum[cum.length - 1] };
@@ -513,21 +523,37 @@ export function MapView({ pack }: { pack: CityPack }) {
     const map = mapRef.current;
     if (!map) return;
     const st = useGame.getState();
-    updateDepot(map, st.depot?.pt ?? null);
-    if (st.depot && !depotMarkerRef.current) {
+    updateDepots(map, st.depots.map((d) => d.pt));
+    const markers = depotMarkersRef.current;
+    const alive = new Set(st.depots.map((d) => d.id));
+    markers.forEach((m, id) => {
+      if (!alive.has(id)) {
+        m.remove();
+        markers.delete(id);
+      }
+    });
+    for (const d of st.depots) {
+      const existing = markers.get(d.id);
+      if (existing) {
+        existing.setLngLat(d.pt);
+        const label = existing.getElement().querySelector('.depot-name');
+        if (label && label.textContent !== d.name) label.textContent = d.name;
+        continue;
+      }
       const el = document.createElement('div');
       el.className = 'depot-marker';
       el.innerHTML =
         '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" ' +
         'stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">' +
-        '<path d="M3 10l9-6 9 6v10h-4v-7H7v7H3z"/><path d="M7 20v-3h10v3"/></svg>';
-      el.title = 'Bus depot';
-      depotMarkerRef.current = new maplibregl.Marker({ element: el, anchor: 'bottom' })
-        .setLngLat(st.depot.pt)
-        .addTo(map);
-    } else if (!st.depot && depotMarkerRef.current) {
-      depotMarkerRef.current.remove();
-      depotMarkerRef.current = null;
+        '<path d="M3 10l9-6 9 6v10h-4v-7H7v7H3z"/><path d="M7 20v-3h10v3"/></svg>' +
+        '<span class="depot-name"></span>';
+      el.querySelector('.depot-name')!.textContent = d.name;
+      markers.set(
+        d.id,
+        new maplibregl.Marker({ element: el, anchor: 'bottom' })
+          .setLngLat(d.pt)
+          .addTo(map),
+      );
     }
   }
 
@@ -553,7 +579,7 @@ export function MapView({ pack }: { pack: CityPack }) {
 
   useEffect(() => {
     if (readyRef.current) syncDepot();
-  }, [depot]);
+  }, [depots]);
 
   useEffect(() => {
     if (readyRef.current) {

@@ -54,7 +54,7 @@ export interface GameState {
 
   stops: Stop[];
   lines: BusLine[];
-  depot: Depot | null;
+  depots: Depot[];
   staff: Staff;
   fleet: FleetEntry[];
   totalRidersServed: number;
@@ -105,11 +105,12 @@ export interface GameState {
   hire: (role: keyof Staff) => void;
   fire: (role: keyof Staff) => void;
   buildDepot: (pt: LngLat) => void;
-  upgradeDepot: () => void;
+  upgradeDepot: (depotId: string) => void;
+  renameDepot: (depotId: string, name: string) => void;
   upgradeStop: (stopId: string) => void;
   removeStopFromLine: (lineId: string, stopId: string) => void;
   requestMoveStop: (stopId: string | null) => void;
-  buyDepotAddon: (addon: 'workshop' | 'washBay' | 'chargers') => void;
+  buyDepotAddon: (depotId: string, addon: 'workshop' | 'washBay' | 'chargers') => void;
   takeLoan: () => void;
   repayLoan: () => void;
   notify: (text: string, kind?: Notice['kind']) => void;
@@ -125,6 +126,7 @@ let recomputeTimer: ReturnType<typeof setTimeout> | null = null;
 let noticeSeq = 0;
 let lineSeq = 0;
 let stopSeq = 0;
+let depotSeq = 0;
 
 function makeWorker(pack: CityPack, onStats: (stats: NetworkStats) => void): Worker {
   const w = new Worker(new URL('./sim/demand.worker.ts', import.meta.url), {
@@ -166,6 +168,11 @@ export function driversNeeded(lines: BusLine[]): number {
 
 export function busModel(id: string) {
   return BUS_MODELS.find((m) => m.id === id) ?? BUS_MODELS[0];
+}
+
+/** total bus parking across every depot the player owns */
+export function depotCapacity(depots: Depot[]): number {
+  return depots.reduce((sum, d) => sum + (DEPOT_CAPACITY[d.level] ?? 0), 0);
 }
 
 /** street-following geometry for an ordered stop sequence (null = unroutable) */
@@ -223,14 +230,14 @@ export const useGame = create<GameState>((set, get) => {
       reqSeq++;
       const mechanicsNeeded = Math.ceil(fleetTotal(s.fleet) / BUSES_PER_MECHANIC);
       let costMult = 1;
-      if (s.depot?.workshop) costMult *= 0.75;
+      if (s.depots.some((d) => d.workshop)) costMult *= 0.75;
       if (s.staff.mechanics < mechanicsNeeded) costMult *= 1.4;
 
       // driver shortage degrades newest lines first
       let driversLeft = s.staff.drivers;
       const effectiveVehicles = new Map<string, number>();
       for (const l of s.lines) {
-        if (!l.active || !s.depot) {
+        if (!l.active || !s.depots.length) {
           effectiveVehicles.set(l.id, 0);
           continue;
         }
@@ -259,7 +266,7 @@ export const useGame = create<GameState>((set, get) => {
             kmh: m.kmh,
             costPerKm: m.costPerKm,
             vehicles: effectiveVehicles.get(l.id) ?? 0,
-            active: l.active && !!s.depot,
+            active: l.active && s.depots.length > 0,
           };
         }),
       });
@@ -286,7 +293,7 @@ export const useGame = create<GameState>((set, get) => {
 
     stops: [],
     lines: [],
-    depot: null,
+    depots: [],
     staff: { drivers: 0, mechanics: 0 },
     fleet: [],
     totalRidersServed: 0,
@@ -339,16 +346,24 @@ export const useGame = create<GameState>((set, get) => {
               st.tier = st.tier ?? 1;
               st.invested = st.invested ?? STOP_COST;
             }
-            if (sv.depot) {
-              const dn = graph.nearestNode(sv.depot.pt, 400);
-              if (dn !== null) sv.depot.node = dn;
-            }
+            // saves from before multi-depot support carry a single depot
+            const depots = sv.depots ?? (sv.depot ? [sv.depot] : []);
+            depots.forEach((d, i) => {
+              const dn = graph.nearestNode(d.pt, 400);
+              if (dn !== null) d.node = dn;
+              d.id = d.id ?? `d${i + 1}`;
+              d.name =
+                d.name ??
+                (graph.stopNameAt(d.node)
+                  ? `${graph.stopNameAt(d.node)} Depot`
+                  : `Depot ${i + 1}`);
+            });
             base = {
               cash: sv.cash,
               clockMin: sv.clockMin,
               stops: sv.stops,
               lines: sv.lines,
-              depot: sv.depot,
+              depots,
               staff: sv.staff,
               fleet: sv.fleet,
               totalRidersServed: sv.totalRidersServed,
@@ -356,6 +371,10 @@ export const useGame = create<GameState>((set, get) => {
             };
             lineSeq = sv.lines.length + 1;
             stopSeq = sv.stops.length + 1;
+            depotSeq = depots.reduce(
+              (mx, d) => Math.max(mx, parseInt(d.id.slice(1), 10) || 0),
+              0,
+            );
           }
         } catch {
           // corrupt save — start fresh
@@ -371,7 +390,7 @@ export const useGame = create<GameState>((set, get) => {
         paused: false,
         stops: [],
         lines: [],
-        depot: null,
+        depots: [],
         staff: { drivers: 0, mechanics: 0 },
         fleet: [],
         totalRidersServed: 0,
@@ -425,7 +444,7 @@ export const useGame = create<GameState>((set, get) => {
       }
       // fixed daily costs, spread across all minutes
       let fixedPerDay = OFFICE_OVERHEAD_PER_DAY;
-      if (s.depot) fixedPerDay += DEPOT_UPKEEP_PER_DAY[s.depot.level] ?? 0;
+      for (const d of s.depots) fixedPerDay += DEPOT_UPKEEP_PER_DAY[d.level] ?? 0;
       fixedPerDay += s.staff.mechanics * MECHANIC_WAGE_PER_DAY;
       if (s.loanTaken) fixedPerDay += LOAN_WEEKLY_INTEREST / 7;
       dCash -= (fixedPerDay / 1440) * dtMin;
@@ -473,7 +492,7 @@ export const useGame = create<GameState>((set, get) => {
 
     setTool: (t) => {
       const s = get();
-      if (t === 'line-new' && !s.depot) {
+      if (t === 'line-new' && !s.depots.length) {
         get().notify('Build a depot first — your buses need a home.', 'bad');
         return;
       }
@@ -843,17 +862,20 @@ export const useGame = create<GameState>((set, get) => {
       const s = get();
       const m = busModel(modelId);
       if (s.totalRidersServed < m.unlockRiders) return;
-      if (m.needsCharger && !s.depot?.chargers) {
+      if (m.needsCharger && !s.depots.some((d) => d.chargers)) {
         get().notify('Electric buses need depot chargers (Depot panel).', 'bad');
         return;
       }
-      if (!s.depot) {
+      if (!s.depots.length) {
         get().notify('Build a depot first.', 'bad');
         return;
       }
-      const cap = DEPOT_CAPACITY[s.depot.level] ?? 6;
+      const cap = depotCapacity(s.depots);
       if (fleetTotal(s.fleet) >= cap) {
-        get().notify(`Depot is full (${cap} buses). Upgrade it for more space.`, 'bad');
+        get().notify(
+          `All depots are full (${cap} buses). Upgrade one or build another.`,
+          'bad',
+        );
         return;
       }
       if (s.cash < m.price) {
@@ -902,7 +924,7 @@ export const useGame = create<GameState>((set, get) => {
 
     buildDepot: (pt) => {
       const s = get();
-      if (s.depot || !s.graph) return;
+      if (!s.graph || !s.pack) return;
       if (s.cash < DEPOT_COST) {
         get().notify('Not enough cash for a depot.', 'bad');
         return;
@@ -912,34 +934,63 @@ export const useGame = create<GameState>((set, get) => {
         get().notify('The depot needs street access — click near a road.', 'bad');
         return;
       }
+      const at = s.graph.pack.nodes[node];
+      const cosLat = Math.cos((s.pack.meta.center[1] * Math.PI) / 180);
+      if (s.depots.some((d) => fastDistM(d.pt, at, cosLat) < 120)) {
+        get().notify('There is already a depot on this block.', 'bad');
+        return;
+      }
+      const street = s.graph.stopNameAt(node);
+      const depot: Depot = {
+        id: `d${++depotSeq}`,
+        name: street ? `${street} Depot` : `Depot ${s.depots.length + 1}`,
+        pt: at,
+        node,
+        level: 1,
+        workshop: false,
+        washBay: false,
+        chargers: false,
+      };
       set({
-        depot: {
-          pt: s.graph.pack.nodes[node],
-          node,
-          level: 1,
-          workshop: false,
-          washBay: false,
-          chargers: false,
-        },
+        depots: [...s.depots, depot],
         cash: s.cash - DEPOT_COST,
         tool: 'select',
         panel: 'depot',
       });
       touchNetwork();
-      get().notify('Depot built! Buy buses in the Fleet panel, then draw a line.', 'good');
+      get().notify(
+        s.depots.length === 0
+          ? `${depot.name} built! Buy buses in the Fleet panel, then draw a line.`
+          : `${depot.name} built — buses now pull out from whichever depot is closest.`,
+        'good',
+      );
       get().saveGame();
     },
 
-    upgradeDepot: () => {
+    upgradeDepot: (depotId) => {
       const s = get();
-      if (!s.depot || s.depot.level >= 3) return;
-      const cost = DEPOT_UPGRADE_COST[s.depot.level + 1];
+      const d = s.depots.find((x) => x.id === depotId);
+      if (!d || d.level >= 3) return;
+      const cost = DEPOT_UPGRADE_COST[d.level + 1];
       if (s.cash < cost) {
         get().notify('Not enough cash.', 'bad');
         return;
       }
-      set({ depot: { ...s.depot, level: s.depot.level + 1 }, cash: s.cash - cost });
-      get().notify(`Depot upgraded to level ${s.depot.level + 1}.`, 'good');
+      set({
+        depots: s.depots.map((x) =>
+          x.id === depotId ? { ...x, level: x.level + 1 } : x,
+        ),
+        cash: s.cash - cost,
+      });
+      get().notify(`${d.name} upgraded to level ${d.level + 1}.`, 'good');
+      get().saveGame();
+    },
+
+    renameDepot: (depotId, name) => {
+      const clean = name.slice(0, 28);
+      set((s) => ({
+        depots: s.depots.map((x) => (x.id === depotId ? { ...x, name: clean } : x)),
+      }));
     },
 
     upgradeStop: (stopId) => {
@@ -1017,17 +1068,22 @@ export const useGame = create<GameState>((set, get) => {
       });
     },
 
-    buyDepotAddon: (addon) => {
+    buyDepotAddon: (depotId, addon) => {
       const s = get();
-      if (!s.depot || s.depot[addon]) return;
+      const d = s.depots.find((x) => x.id === depotId);
+      if (!d || d[addon]) return;
       const cost =
         addon === 'workshop' ? WORKSHOP_COST : addon === 'washBay' ? WASH_BAY_COST : CHARGERS_COST;
       if (s.cash < cost) {
         get().notify('Not enough cash.', 'bad');
         return;
       }
-      set({ depot: { ...s.depot, [addon]: true }, cash: s.cash - cost });
+      set({
+        depots: s.depots.map((x) => (x.id === depotId ? { ...x, [addon]: true } : x)),
+        cash: s.cash - cost,
+      });
       touchNetwork();
+      get().saveGame();
     },
 
     takeLoan: () => {
@@ -1077,7 +1133,7 @@ export const useGame = create<GameState>((set, get) => {
         clockMin: s.clockMin,
         stops: s.stops,
         lines: s.lines,
-        depot: s.depot,
+        depots: s.depots,
         staff: s.staff,
         fleet: s.fleet,
         totalRidersServed: s.totalRidersServed,
