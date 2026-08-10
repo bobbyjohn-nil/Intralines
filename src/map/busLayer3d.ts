@@ -29,7 +29,12 @@ interface BusUserData {
   glassMats: THREE.MeshLambertMaterial[];
   headlights: THREE.Mesh[];
   taillights: THREE.Mesh[];
+  /** front door on the platform side — the station viewer slides this open */
+  curbDoor?: THREE.Mesh;
 }
+
+/** rest position of the door panels, either side of the body */
+export const DOOR_Z = 1.36;
 
 /** per-line context computed by MapView from the road graph + census */
 export interface LineExtras {
@@ -809,6 +814,9 @@ function applyBusLighting(mesh: THREE.Group, day: number): void {
 }
 
 const bodyGeoCache = new Map<string, THREE.BoxGeometry>();
+const doorGeoCache = new Map<string, THREE.BoxGeometry>();
+/** every bus's doors share one material — they are never recolored */
+const doorMat = new THREE.MeshLambertMaterial({ color: 0x1c2126 });
 
 /**
  * Company-liveried bus: the body wears the operator's brand color, a full-
@@ -844,6 +852,35 @@ export function makeBusMesh(
     emissive: stripeColor.clone().multiplyScalar(0.3),
   });
 
+  /**
+   * Passenger doors, on both flanks. Which flank faces the curb depends on
+   * where you are looking from — the map keeps buses to the right of the
+   * centerline while the station diorama parks them with the platform on
+   * their left — so both sides get doors and the bus reads properly whichever
+   * one is toward the camera. They sit at z = ±1.36, just proud of the livery
+   * stripe (±1.34) and window band (±1.32), so a door interrupts the stripe
+   * the way a real one does.
+   */
+  const addDoors = (xs: number[], height: number, centerY: number): void => {
+    const key = `door-${height}`;
+    let geo = doorGeoCache.get(key);
+    if (!geo) {
+      geo = new THREE.BoxGeometry(1.5, height, 0.06);
+      doorGeoCache.set(key, geo);
+    }
+    for (const x of xs) {
+      for (const z of [-DOOR_Z, DOOR_Z]) {
+        const door = new THREE.Mesh(geo, doorMat);
+        door.position.set(x, centerY, z);
+        g.add(door);
+        // the first one is the front door; the station viewer opens it
+        if (z < 0 && !(g.userData as BusUserData).curbDoor) {
+          (g.userData as BusUserData).curbDoor = door;
+        }
+      }
+    }
+  };
+
   if (modelId === 'doubledeck') {
     // two floors: tall body, two window bands, roof right at the top
     const body = new THREE.Mesh(new THREE.BoxGeometry(len, 3.6, 2.6), bodyMat);
@@ -860,29 +897,45 @@ export function makeBusMesh(
     const roof = new THREE.Mesh(new THREE.BoxGeometry(len - 0.4, 0.18, 2.4), roofMat);
     roof.position.y = 4.2;
     g.add(roof);
+    // lower deck only — the stairs eat the space a rear door would use
+    addDoors([len / 2 - 3.9], 2.0, 1.6);
   } else if (modelId === 'minibus') {
-    // cutaway-van shuttle: van cab and hood up front, box body behind
+    // Cutaway-van shuttle: a narrow van cab and hood up front, with the
+    // passenger box built wide behind it. The overhang is the whole shape of
+    // this thing, so it is drawn generously — the cab sits nearer the camera
+    // in the map's perspective view, which eats a realistic 20% difference
+    // entirely and leaves the bus reading as one slab.
     const box = new THREE.Mesh(new THREE.BoxGeometry(5.0, 2.3, 2.6), bodyMat);
     box.position.set(-1.0, 1.6, 0);
     g.add(box);
-    const cab = new THREE.Mesh(new THREE.BoxGeometry(1.4, 1.5, 2.1), bodyMat);
+    const cab = new THREE.Mesh(new THREE.BoxGeometry(1.4, 1.5, 1.85), bodyMat);
     cab.position.set(2.2, 1.15, 0);
     g.add(cab);
-    const hood = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.8, 2.0), bodyMat);
+    const hood = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.8, 1.6), bodyMat);
     hood.position.set(3.05, 0.85, 0);
     g.add(hood);
+    // the box front wall standing proud of the cab roof, which is what makes
+    // a cutaway look cut away rather than merely tapered
+    const shoulder = new THREE.Mesh(
+      new THREE.BoxGeometry(0.16, 2.3, 2.68),
+      new THREE.MeshLambertMaterial({ color: bodyColor.clone().multiplyScalar(0.82) }),
+    );
+    shoulder.position.set(1.5, 1.6, 0);
+    g.add(shoulder);
     const stripe = new THREE.Mesh(new THREE.BoxGeometry(4.9, 0.4, 2.68), stripeMat);
     stripe.position.set(-1.0, 1.05, 0);
     g.add(stripe);
     const windows = new THREE.Mesh(new THREE.BoxGeometry(4.5, 0.85, 2.64), glassMat);
     windows.position.set(-1.0, 2.35, 0);
     g.add(windows);
-    const cabGlass = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.7, 1.95), glassMat);
+    const cabGlass = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.7, 1.7), glassMat);
     cabGlass.position.set(2.92, 1.62, 0);
     g.add(cabGlass);
     const roof = new THREE.Mesh(new THREE.BoxGeometry(4.8, 0.16, 2.4), roofMat);
     roof.position.set(-1.0, 2.85, 0);
     g.add(roof);
+    // one door, right behind the cab, like every cutaway shuttle
+    addDoors([0.75], 1.9, 1.57);
   } else {
     const key = `body-${len}`;
     let bodyGeo = bodyGeoCache.get(key);
@@ -905,6 +958,11 @@ export function makeBusMesh(
     const roof = new THREE.Mesh(new THREE.BoxGeometry(len - 0.4, 0.18, 2.4), roofMat);
     roof.position.y = 2.95;
     g.add(roof);
+
+    // front and rear passenger doors. The front one lines up with the sliding
+    // panel the station viewer animates, so up close the door that opens is
+    // the door that is painted on.
+    addDoors([len / 2 - 3.9, -len / 2 + 2.5], 2.2, 1.72);
   }
 
   if (modelId === 'artic') {

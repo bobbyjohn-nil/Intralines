@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import * as THREE from 'three';
-import { makeBusMesh } from '../map/busLayer3d';
+import { DOOR_Z, makeBusMesh } from '../map/busLayer3d';
 import { lineRefModel, useGame } from '../game/store';
 
 /** visit length in real ms per speed setting — faster game, snappier stop */
@@ -349,13 +349,17 @@ export function StationScene({ stopId, tier }: { stopId: string; tier: number })
       });
       mesh.position.set(-26, 0.1, tier >= 4 ? 2.6 : 2.2);
       mesh.rotation.y = 0; // +x facing
-      // curb-side door: a dark panel that slides open
-      const door = new THREE.Mesh(
-        new THREE.BoxGeometry(1.5, 1.7, 0.08),
-        new THREE.MeshLambertMaterial({ color: 0x1c2126 }),
-      );
-      door.position.set(1.6, 1.15, -1.36);
-      mesh.add(door);
+      // the bus already wears painted doors; slide the platform-side one open
+      // rather than stacking a second panel on top of it
+      let door = (mesh.userData as { curbDoor?: THREE.Mesh }).curbDoor;
+      if (!door) {
+        door = new THREE.Mesh(
+          new THREE.BoxGeometry(1.5, 1.7, 0.08),
+          new THREE.MeshLambertMaterial({ color: 0x1c2126 }),
+        );
+        door.position.set(1.6, 1.15, -DOOR_Z);
+        mesh.add(door);
+      }
       scene.add(mesh);
       visit = { mesh, door, t: 0 };
     };
@@ -397,7 +401,7 @@ export function StationScene({ stopId, tier }: { stopId: string; tier: number })
         mesh.position.x = 0;
         mesh.position.z = bayZ;
         mesh.rotation.y = 0;
-        door.position.z = -1.36 + ease((t - 0.26) / 0.1) * 0.9;
+        door.position.z = -DOOR_Z + ease((t - 0.26) / 0.1) * 0.9;
       } else if (t < 0.64) {
         // exchange: the queue shuffles aboard
         const k = (t - 0.36) / 0.28;
@@ -411,7 +415,7 @@ export function StationScene({ stopId, tier }: { stopId: string; tier: number })
         });
       } else if (t < 0.74) {
         // doors close
-        door.position.z = -0.46 - ease((t - 0.64) / 0.1) * 0.9;
+        door.position.z = -DOOR_Z + 0.9 - ease((t - 0.64) / 0.1) * 0.9;
       } else {
         // pull away — swing back out to the through lane
         const k = (t - 0.74) / 0.26;
