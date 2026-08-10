@@ -15,6 +15,8 @@ import {
   STOP_UPGRADE_COST, SUBSIDY_PER_RIDER, WASH_BAY_COST, WORKSHOP_COST, wearLabel,
   EXPRESS_MIN_LEN_M, EXPRESS_MIN_SPACING_M, EXPRESS_MIN_STOPS, EXPRESS_SUBSIDY_MULT,
   FARE_REFERENCE, isExpress, stopSpacingM,
+  ADV_HEADWAY_MAX, ADV_HEADWAY_MIN, ADV_HEADWAY_STEP, busesForHeadway,
+  headwayForBuses, isPeakHour, SCHED_PERIODS, SIMPLE_PERIODS, type SchedMode,
 } from '../game/constants';
 import { fmtInt, fmtMoney } from './format';
 import type { BusLine, CityPack, FleetEntry, LineStats, LngLat } from '../game/types';
@@ -204,6 +206,164 @@ function PanelTitle({ title, onBack }: { title: string; onBack?: () => void }) {
 }
 
 // ---------------------------------------------------------------------------
+
+/**
+ * The timetable, in whichever direction the player thinks.
+ *
+ * Normal: put buses out across two halves of the day and see the frequency
+ * that buys. Advanced: promise a frequency across four windows and see the
+ * buses it takes. Both write the same thing underneath, so switching modes
+ * carries the timetable over rather than resetting it.
+ */
+function Timetable({ line, cycleMin }: { line: BusLine; cycleMin: number }) {
+  const updateLine = useGame((s) => s.updateLine);
+  const mode: SchedMode = line.schedMode ?? 'simple';
+  const owned = line.vehicles;
+
+  // seed each mode from whatever the line already runs, so a switch never
+  // throws the timetable away
+  const buses =
+    line.periodBuses ??
+    [line.peakHeadwayMin ?? line.headwayMin, line.headwayMin].map((h) =>
+      busesForHeadway(cycleMin, h),
+    );
+  // a line seeded from old rush/off-peak headways can sit outside the band the
+  // advanced dial covers; pull it in so the slider and the readout agree
+  const clampAdv = (h: number) =>
+    Math.min(ADV_HEADWAY_MAX, Math.max(ADV_HEADWAY_MIN, h));
+  const headways = (
+    line.periodHeadwayMin ??
+    SCHED_PERIODS.map((p) =>
+      isPeakHour(p.from) ? (line.peakHeadwayMin ?? line.headwayMin) : line.headwayMin,
+    )
+  ).map(clampAdv);
+
+  const setMode = (m: SchedMode) =>
+    updateLine(line.id, {
+      schedMode: m,
+      periodBuses: buses,
+      periodHeadwayMin: headways,
+    });
+
+  const setBuses = (i: number, v: number) => {
+    const next = [...buses];
+    next[i] = Math.max(0, Math.min(owned, v));
+    updateLine(line.id, { schedMode: 'simple', periodBuses: next });
+  };
+
+  const setHeadway = (i: number, v: number) => {
+    const next = [...headways];
+    next[i] = v;
+    updateLine(line.id, { schedMode: 'advanced', periodHeadwayMin: next });
+  };
+
+  const needed = SCHED_PERIODS.reduce(
+    (mx, _p, i) => Math.max(mx, busesForHeadway(cycleMin, headways[i])),
+    0,
+  );
+
+  return (
+    <div className="field">
+      <label>
+        Timetable{' '}
+        <small className="dim">round trip {Math.round(cycleMin)} min</small>
+      </label>
+      <div className="seg">
+        <button
+          className={mode === 'simple' ? 'on' : ''}
+          onClick={() => setMode('simple')}
+          title="Set how many buses go out; the game works out the frequency"
+        >
+          Normal
+        </button>
+        <button
+          className={mode === 'advanced' ? 'on' : ''}
+          onClick={() => setMode('advanced')}
+          title="Set the frequency; the game works out the buses"
+        >
+          Advanced
+        </button>
+      </div>
+
+      {mode === 'simple' ? (
+        <>
+          {SIMPLE_PERIODS.map((p, i) => {
+            const hw = headwayForBuses(cycleMin, buses[i]);
+            return (
+              <div key={p.label} className="sched-row">
+                <span className="sched-when">
+                  <b>{p.label}</b>
+                  <small>{p.short}</small>
+                </span>
+                <span className="stepper">
+                  <button onClick={() => setBuses(i, buses[i] - 1)}>−</button>
+                  <b>{buses[i]}</b>
+                  <button
+                    disabled={buses[i] >= owned}
+                    title={buses[i] >= owned ? 'Assign more buses to this line first' : ''}
+                    onClick={() => setBuses(i, buses[i] + 1)}
+                  >
+                    +
+                  </button>
+                </span>
+                <span className="sched-out">
+                  {isFinite(hw) ? `every ${hw.toFixed(hw < 10 ? 1 : 0)} min` : 'no service'}
+                </span>
+              </div>
+            );
+          })}
+          <small className="dim">
+            {owned === 0
+              ? 'This line has no buses yet — assign some above and they will run to this timetable.'
+              : `Buses out of ${owned} assigned. More buses on the road, less time between them.`}
+          </small>
+        </>
+      ) : (
+        <>
+          {SCHED_PERIODS.map((p, i) => (
+            <div key={p.key} className="sched-row adv">
+              <span className="sched-when">
+                <b>{p.label}</b>
+                <small>{p.short}</small>
+              </span>
+              <input
+                type="range"
+                min={ADV_HEADWAY_MIN}
+                max={ADV_HEADWAY_MAX}
+                step={ADV_HEADWAY_STEP}
+                value={headways[i]}
+                onChange={(e) => setHeadway(i, +e.target.value)}
+              />
+              <span className="sched-out">
+                every {headways[i].toFixed(1)} min
+                <small>{busesForHeadway(cycleMin, headways[i])} buses</small>
+              </span>
+            </div>
+          ))}
+          <small className={needed > owned ? 'warn' : 'dim'}>
+            {needed > owned
+              ? `This timetable needs ${needed} buses and the line has ${owned} — the schedule will stretch until you assign more.`
+              : `Needs ${needed} of the ${owned} buses assigned at its busiest.`}
+          </small>
+        </>
+      )}
+
+      <label className="mini-select buffer-select">
+        Buffer
+        <select
+          value={line.stopBufferSec ?? 0}
+          onChange={(e) => updateLine(line.id, { stopBufferSec: +e.target.value })}
+        >
+          {[0, 10, 20, 30, 45].map((b) => (
+            <option key={b} value={b}>{b}s / stop</option>
+          ))}
+        </select>
+      </label>
+      {/* outside the label: it would inherit the uppercase field styling */}
+      <small className="dim">Padding written into the timetable to soak up traffic delays.</small>
+    </div>
+  );
+}
 
 /**
  * Express standing, and — when a line just misses — exactly what it would
@@ -418,48 +578,7 @@ function LineEditPanel() {
         </small>
       </div>
 
-      <div className="field">
-        <label>Timetable</label>
-        <div className="select-row">
-          <label className="mini-select">
-            Rush
-            <select
-              value={line.peakHeadwayMin ?? line.headwayMin}
-              onChange={(e) => updateLine(line.id, { peakHeadwayMin: +e.target.value })}
-            >
-              {HEADWAY_CHOICES.map((h) => (
-                <option key={h} value={h}>every {h} min</option>
-              ))}
-            </select>
-          </label>
-          <label className="mini-select">
-            Off-peak
-            <select
-              value={line.headwayMin}
-              onChange={(e) => updateLine(line.id, { headwayMin: +e.target.value })}
-            >
-              {HEADWAY_CHOICES.map((h) => (
-                <option key={h} value={h}>every {h} min</option>
-              ))}
-            </select>
-          </label>
-          <label className="mini-select">
-            Buffer
-            <select
-              value={line.stopBufferSec ?? 0}
-              onChange={(e) => updateLine(line.id, { stopBufferSec: +e.target.value })}
-            >
-              {[0, 10, 20, 30, 45].map((b) => (
-                <option key={b} value={b}>{b}s / stop</option>
-              ))}
-            </select>
-          </label>
-        </div>
-        <small className="dim">
-          Rush hours are 07–09 &amp; 16–18. Buffer is timetable padding that soaks
-          up traffic delays.
-        </small>
-      </div>
+      <Timetable line={line} cycleMin={cycleShown} />
 
       <div className="field">
         <label>Service hours</label>

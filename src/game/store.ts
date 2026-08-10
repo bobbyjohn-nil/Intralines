@@ -597,6 +597,9 @@ export const useGame = create<GameState>((set, get) => {
             pathLenM: l.pathLenM,
             headwayMin: l.headwayMin,
             peakHeadwayMin: l.peakHeadwayMin ?? l.headwayMin,
+            schedMode: l.schedMode,
+            periodBuses: l.periodBuses,
+            periodHeadwayMin: l.periodHeadwayMin,
             stopBufferSec: l.stopBufferSec ?? 0,
             firstHour: l.firstHour,
             lastHour: l.lastHour,
@@ -1264,6 +1267,11 @@ export const useGame = create<GameState>((set, get) => {
         pathLenM: acc,
         headwayMin: 15,
         peakHeadwayMin: 8,
+        // new lines start in normal mode: two buses at rush, one the rest of
+        // the day. The old headways stay in step as the advanced fallback.
+        schedMode: 'simple',
+        periodBuses: [2, 1],
+        periodHeadwayMin: [10, 15, 10, 15],
         stopBufferSec: 0,
         firstHour: 6,
         lastHour: 22,

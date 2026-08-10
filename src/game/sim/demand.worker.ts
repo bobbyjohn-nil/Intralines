@@ -24,6 +24,8 @@ import {
   WALK_MIN_PER_KM,
   DRIVER_WAGE_PER_HOUR,
   EXPRESS_RIDE_WEIGHT,
+  headwayAtHour,
+  peakBusesNeeded,
   EXPRESS_SUBSIDY_MULT,
   fareTimePenaltyMin,
   isExpress,
@@ -42,6 +44,9 @@ interface WLine {
   pathLenM: number;
   headwayMin: number;
   peakHeadwayMin: number;
+  schedMode?: 'simple' | 'advanced';
+  periodBuses?: number[];
+  periodHeadwayMin?: number[];
   stopBufferSec: number;
   firstHour: number;
   lastHour: number;
@@ -157,14 +162,29 @@ function computeNetwork(msg: NetworkMsg) {
     const refuelMinPerCycle = l.tankKm > 0 ? (cycleKm / l.tankKm) * REFUEL_MIN : 0;
     const cycleMin =
       2 * rideMinFull + 2 * LAYOVER_MIN + 2 * (DWELL_SEC / 60) + refuelMinPerCycle;
-    const peakHeadway = l.peakHeadwayMin ?? l.headwayMin;
-    const tightest = Math.min(l.headwayMin, peakHeadway);
-    const vehiclesNeeded = Math.max(1, Math.ceil(cycleMin / tightest));
-    // short fleet => the schedule stretches (per time-of-day window)
+    // the timetable the player wrote, whichever mode they wrote it in
+    const plannedAt = (h: number) => headwayAtHour(l, h, cycleMin);
+    const vehiclesNeeded = peakBusesNeeded(l, cycleMin);
+    // short fleet => the schedule stretches, hour by hour
     const stretch = cycleMin / Math.max(l.vehicles, 1);
-    const headwayEff = Math.max(l.headwayMin, Math.min(stretch, cycleMin));
-    const headwayEffPeak = Math.max(peakHeadway, Math.min(stretch, cycleMin));
-    const effAt = (h: number) => (isPeakHour(h) ? headwayEffPeak : headwayEff);
+    const effAt = (h: number) => {
+      const planned = plannedAt(h);
+      if (!isFinite(planned)) return Infinity; // this line rests this hour
+      return Math.max(planned, Math.min(stretch, cycleMin));
+    };
+    // representative headways for the readouts: the best the line actually
+    // manages in each half of the day, ignoring hours it does not run
+    const bestOver = (peak: boolean) => {
+      let best = Infinity;
+      for (let h = l.firstHour; h < l.lastHour; h++) {
+        if (isPeakHour(h) !== peak) continue;
+        const e = effAt(h);
+        if (isFinite(e)) best = Math.min(best, e);
+      }
+      return isFinite(best) ? best : cycleMin;
+    };
+    const headwayEff = bestOver(false);
+    const headwayEffPeak = bestOver(true);
     // Passengers check the timetable and reach the stop just before the
     // bus is due — but traffic makes buses run late, and every late
     // minute is a minute they stand there fuming. A minority still shows
@@ -478,6 +498,7 @@ function computeNetwork(msg: NetworkMsg) {
     let driverHours = 0;
     for (let h = l.firstHour; h < l.lastHour; h++) {
       const eff = lc.effAt(h);
+      if (!isFinite(eff)) continue; // parked this hour: no trips, no wages
       tripsPerDay += 60 / eff;
       driverHours += Math.min(
         l.vehicles,

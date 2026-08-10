@@ -10,6 +10,7 @@ import { Menu } from './ui/Menu';
 import { Loading } from './ui/Loading';
 import { Founding } from './ui/Founding';
 import { UpdateBanner } from './ui/UpdateBanner';
+import { BusWipe } from './ui/BusWipe';
 
 export default function App() {
   const phase = useGame((s) => s.phase);
@@ -64,6 +65,7 @@ export default function App() {
     <>
       <Screen phase={phase} pack={pack} companyName={companyName} />
       <UpdateBanner />
+      <BusWipe />
     </>
   );
 }

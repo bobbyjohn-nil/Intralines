@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { useGame } from '../game/store';
 import type { Panel } from '../game/store';
@@ -7,20 +7,28 @@ import {
   IconPeople, IconPlus, IconPointer, IconReport, IconRoute,
 } from './icons';
 
-/** dropdown for the extra demand layers (tourism, education) */
-function HeatDropdown({
-  heatmap,
-  setHeatmap,
+type Heatmap = 'off' | 'pop' | 'jobs' | 'tour' | 'edu' | 'air' | 'rail' | 'modes';
+
+/**
+ * A dock button that opens a menu. The menu is portaled to the body: the dock
+ * is a transformed overflow container, so a popup inside it gets clipped.
+ */
+function DockMenu({
+  label,
+  icon,
+  active,
+  children,
+  title,
 }: {
-  heatmap: 'off' | 'pop' | 'jobs' | 'tour' | 'edu' | 'air' | 'rail' | 'modes';
-  setHeatmap: (h: 'off' | 'pop' | 'jobs' | 'tour' | 'edu' | 'air' | 'rail' | 'modes') => void;
+  label: string;
+  icon: ReactNode;
+  active?: boolean;
+  title?: string;
+  children: (close: () => void) => ReactNode;
 }) {
   const [open, setOpen] = useState(false);
   const boxRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
-  const active =
-    heatmap === 'tour' || heatmap === 'edu' || heatmap === 'air' ||
-    heatmap === 'rail' || heatmap === 'modes';
 
   useEffect(() => {
     if (!open) return;
@@ -28,81 +36,29 @@ function HeatDropdown({
       const t = e.target as Node;
       if (!boxRef.current?.contains(t) && !menuRef.current?.contains(t)) setOpen(false);
     };
+    const esc = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false);
     window.addEventListener('mousedown', close);
-    return () => window.removeEventListener('mousedown', close);
+    window.addEventListener('keydown', esc);
+    return () => {
+      window.removeEventListener('mousedown', close);
+      window.removeEventListener('keydown', esc);
+    };
   }, [open]);
 
-  const pick = (h: 'tour' | 'edu' | 'air' | 'rail' | 'modes') => {
-    setHeatmap(heatmap === h ? 'off' : h);
-    setOpen(false);
-  };
-
   return (
-    <div className="heat-more" ref={boxRef}>
+    <div className="dock-menu" ref={boxRef}>
       <button
         className={active ? 'on' : ''}
         onClick={() => setOpen((o) => !o)}
-        title="More demand layers: tourism, education"
+        title={title}
       >
-        <IconHeat />
-        <span>
-          {heatmap === 'tour'
-            ? 'Tourism'
-            : heatmap === 'edu'
-              ? 'Education'
-              : heatmap === 'air'
-                ? 'Airport'
-                : heatmap === 'rail'
-                  ? 'Rail'
-                  : heatmap === 'modes'
-                    ? 'Modes'
-                    : 'More'} ▾
-        </span>
+        {icon}
+        <span>{label} ▾</span>
       </button>
       {open &&
         createPortal(
-          // portal: the dock is a transformed overflow container, so the
-          // popup must live outside it to escape clipping
           <div className="heat-menu" ref={menuRef}>
-            <button
-              className={heatmap === 'tour' ? 'on' : ''}
-              onClick={() => pick('tour')}
-            >
-              Tourism demand
-              <small>venues, hotels, restaurants</small>
-            </button>
-            <button
-              className={heatmap === 'edu' ? 'on' : ''}
-              onClick={() => pick('edu')}
-            >
-              Educational demand
-              <small>schools and campuses</small>
-            </button>
-            <button
-              className={heatmap === 'air' ? 'on' : ''}
-              onClick={() => pick('air')}
-            >
-              Airport demand
-              <small>flyers and airport staff needing a ride</small>
-            </button>
-            <button
-              className={heatmap === 'rail' ? 'on' : ''}
-              onClick={() => pick('rail')}
-            >
-              Regional rail demand
-              <small>train riders connecting to local transit</small>
-            </button>
-            <button
-              className={heatmap === 'modes' ? 'on' : ''}
-              onClick={() => pick('modes')}
-            >
-              Travel modes
-              <small>who drives, walks, bikes or rides the bus</small>
-            </button>
-            <p className="heat-note">
-              These layers can overlap the residents and work demand — campuses,
-              hotels and venues are workplaces too.
-            </p>
+            {children(() => setOpen(false))}
           </div>,
           document.body,
         )}
@@ -118,10 +74,26 @@ export function Toolbar() {
   const setPanel = useGame((s) => s.setPanel);
   const heatmap = useGame((s) => s.heatmap);
   const setHeatmap = useGame((s) => s.setHeatmap);
+  const trafficView = useGame((s) => s.trafficView);
+  const setTrafficView = useGame((s) => s.setTrafficView);
   const hasDepot = useGame((s) => s.depots.length > 0);
-  const pack = useGame((s) => s.pack);
 
   const togglePanel = (p: Panel) => setPanel(panel === p ? 'none' : p);
+  const pickLayer = (h: Heatmap, close: () => void) => {
+    setHeatmap(heatmap === h ? 'off' : h);
+    close();
+  };
+
+  const LAYERS: [Heatmap, string, string][] = [
+    ['pop', 'Residents', 'where people live'],
+    ['jobs', 'Work', 'where the jobs are'],
+    ['tour', 'Tourism', 'venues, hotels, restaurants'],
+    ['edu', 'Education', 'schools and campuses'],
+    ['air', 'Airport', 'flyers and airport staff needing a ride'],
+    ['rail', 'Regional rail', 'train riders connecting to local transit'],
+    ['modes', 'Travel modes', 'who drives, walks, bikes or rides the bus'],
+  ];
+  const layerName = LAYERS.find(([h]) => h === heatmap)?.[1];
 
   return (
     <div className="dock">
@@ -151,34 +123,55 @@ export function Toolbar() {
           <span>Place depot</span>
         </button>
       )}
-      <div className="dock-split">
-        <button
-          className={heatmap === 'pop' ? 'on' : ''}
-          onClick={() => setHeatmap(heatmap === 'pop' ? 'off' : 'pop')}
-          title="Toggle the residents demand heatmap"
-        >
-          <IconPeople size={15} />
-          <span>Residents</span>
-        </button>
-        <button
-          className={heatmap === 'jobs' ? 'on' : ''}
-          onClick={() => setHeatmap(heatmap === 'jobs' ? 'off' : 'jobs')}
-          title="Toggle the work demand heatmap"
-        >
-          <IconChart size={15} />
-          <span>Work</span>
-        </button>
-      </div>
-      <HeatDropdown heatmap={heatmap} setHeatmap={setHeatmap} />
-      <button
-        className={panel === 'map-options' ? 'on' : ''}
-        onClick={() => togglePanel('map-options')}
-        title="Map options: station names, basemap"
-      >
-        <IconMapFold />
-        <span>Map</span>
-      </button>
+
       <div className="dock-sep" />
+
+      {/* everything that changes what the map shows, in one place */}
+      <DockMenu
+        label={layerName ?? (trafficView ? 'Traffic' : 'Map')}
+        icon={<IconHeat />}
+        active={heatmap !== 'off' || trafficView || panel === 'map-options'}
+        title="Demand layers, traffic and map options"
+      >
+        {(close) => (
+          <>
+            {LAYERS.map(([h, name, blurb]) => (
+              <button
+                key={h}
+                className={heatmap === h ? 'on' : ''}
+                onClick={() => pickLayer(h, close)}
+              >
+                {name}
+                <small>{blurb}</small>
+              </button>
+            ))}
+            <div className="menu-sep" />
+            <button
+              className={trafficView ? 'on' : ''}
+              onClick={() => {
+                setTrafficView(!trafficView);
+                close();
+              }}
+            >
+              Traffic forecast
+              <small>tint main roads by how jammed they get</small>
+            </button>
+            <button
+              className={panel === 'map-options' ? 'on' : ''}
+              onClick={() => {
+                setPanel('map-options');
+                close();
+              }}
+            >
+              Map options…
+              <small>station names, basemap, forecast hour</small>
+            </button>
+          </>
+        )}
+      </DockMenu>
+
+      <div className="dock-sep" />
+
       <button
         className={panel === 'lines' || panel === 'line-edit' ? 'on' : ''}
         onClick={() => togglePanel('lines')}
@@ -203,38 +196,63 @@ export function Toolbar() {
         <IconPeople />
         <span>Staff</span>
       </button>
-      <button
-        className={panel === 'depot' ? 'on' : ''}
-        onClick={() => togglePanel('depot')}
-        title="Depot upgrades"
+
+      {/* the panels you open once in a while rather than once a minute */}
+      <DockMenu
+        label="Company"
+        icon={<IconChart />}
+        active={panel === 'depot' || panel === 'finance' || panel === 'report' || panel === 'help'}
+        title="Depot, finance, report cards and help"
       >
-        <IconDepot />
-        <span>Depot</span>
-      </button>
-      <button
-        className={panel === 'finance' ? 'on' : ''}
-        onClick={() => togglePanel('finance')}
-        title="Cash flow, loan, save files"
-      >
-        <IconChart />
-        <span>Finance</span>
-      </button>
-      <button
-        className={panel === 'report' ? 'on' : ''}
-        onClick={() => togglePanel('report')}
-        title="Quarterly Transit Authority report cards"
-      >
-        <IconReport />
-        <span>Report</span>
-      </button>
-      <button
-        className={panel === 'help' ? 'on' : ''}
-        onClick={() => togglePanel('help')}
-        title="How to play"
-      >
-        <IconHelp />
-        <span>Help</span>
-      </button>
+        {(close) => (
+          <>
+            <button
+              className={panel === 'depot' ? 'on' : ''}
+              onClick={() => {
+                setPanel('depot');
+                close();
+              }}
+            >
+              Depot
+              <small>capacity, workshop, chargers</small>
+            </button>
+            <button
+              className={panel === 'finance' ? 'on' : ''}
+              onClick={() => {
+                setPanel('finance');
+                close();
+              }}
+            >
+              Finance
+              <small>cash flow, loans, save files</small>
+            </button>
+            <button
+              className={panel === 'report' ? 'on' : ''}
+              onClick={() => {
+                setPanel('report');
+                close();
+              }}
+            >
+              Report cards
+              <small>how the Transit Authority rates you</small>
+            </button>
+            <div className="menu-sep" />
+            <button
+              className={panel === 'help' ? 'on' : ''}
+              onClick={() => {
+                setPanel('help');
+                close();
+              }}
+            >
+              How to play
+              <small>the whole loop, start to finish</small>
+            </button>
+          </>
+        )}
+      </DockMenu>
     </div>
   );
 }
+
+/** kept for the help panel's cross-reference to the old Map button */
+export const MAP_PANEL: Panel = 'map-options';

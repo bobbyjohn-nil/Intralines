@@ -253,6 +253,94 @@ export function congestionGain(kmh: number, urban: number): number {
 }
 
 // ---------------------------------------------------------------------------
+// Timetables
+//
+// Two ways to write one, because the two halves of the job pull in opposite
+// directions. Normal mode asks the question an operator asks — how many buses
+// can I put out at rush hour? — and reports the frequency that buys. Advanced
+// mode asks the question a passenger asks — how long will I wait? — across
+// finer slices of the day, and works out the buses needed to keep that promise.
+
+export type SchedMode = 'simple' | 'advanced';
+
+/** the day, cut into windows a timetable can address */
+export const SCHED_PERIODS = [
+  { key: 'am', label: 'AM rush', short: '07–09', from: 7, to: 9 },
+  { key: 'mid', label: 'Midday', short: '09–16', from: 9, to: 16 },
+  { key: 'pm', label: 'PM rush', short: '16–18', from: 16, to: 18 },
+  { key: 'off', label: 'Early & evening', short: 'rest of the day', from: 18, to: 7 },
+] as const;
+
+/** which advanced period an hour falls in */
+export function periodOfHour(hour: number): number {
+  const h = ((hour % 24) + 24) % 24;
+  if (h >= 7 && h < 9) return 0;
+  if (h >= 9 && h < 16) return 1;
+  if (h >= 16 && h < 18) return 2;
+  return 3;
+}
+
+/** normal mode splits the day in two: rush, and everything else */
+export const SIMPLE_PERIODS = [
+  { label: 'Rush hours', short: '07–09 & 16–18' },
+  { label: 'Off-peak', short: 'the rest of the day' },
+] as const;
+
+/** the band the advanced frequency dial fine-tunes within */
+export const ADV_HEADWAY_MIN = 10;
+export const ADV_HEADWAY_MAX = 15;
+export const ADV_HEADWAY_STEP = 0.5;
+/** buses cannot physically follow each other closer than this */
+export const MIN_HEADWAY_MIN = 2;
+
+interface SchedLine {
+  schedMode?: SchedMode;
+  /** normal mode: buses out in [rush, off-peak] */
+  periodBuses?: number[];
+  /** advanced mode: minutes between buses, per SCHED_PERIODS entry */
+  periodHeadwayMin?: number[];
+  headwayMin: number;
+  peakHeadwayMin?: number;
+}
+
+/** buses needed to hold a headway on a route with this round-trip time */
+export function busesForHeadway(cycleMin: number, headwayMin: number): number {
+  return Math.max(1, Math.ceil(cycleMin / Math.max(headwayMin, MIN_HEADWAY_MIN)));
+}
+
+/** the frequency a given number of buses buys on this route */
+export function headwayForBuses(cycleMin: number, buses: number): number {
+  if (buses <= 0) return Infinity; // nothing running: no service this period
+  return Math.max(MIN_HEADWAY_MIN, cycleMin / buses);
+}
+
+/**
+ * The timetable, whichever way it was written. Lines saved before timetable
+ * modes existed still carry plain rush/off-peak headways, and read exactly as
+ * they always did.
+ */
+export function headwayAtHour(l: SchedLine, hour: number, cycleMin: number): number {
+  if (l.schedMode === 'advanced' && l.periodHeadwayMin?.length) {
+    return Math.max(MIN_HEADWAY_MIN, l.periodHeadwayMin[periodOfHour(hour)]);
+  }
+  if (l.schedMode === 'simple' && l.periodBuses?.length) {
+    return headwayForBuses(cycleMin, l.periodBuses[isPeakHour(hour) ? 0 : 1]);
+  }
+  return isPeakHour(hour) ? (l.peakHeadwayMin ?? l.headwayMin) : l.headwayMin;
+}
+
+/** most buses this timetable ever has on the road at once */
+export function peakBusesNeeded(l: SchedLine, cycleMin: number): number {
+  let most = 1;
+  for (let h = 0; h < 24; h++) {
+    const hw = headwayAtHour(l, h, cycleMin);
+    if (!isFinite(hw)) continue;
+    most = Math.max(most, busesForHeadway(cycleMin, hw));
+  }
+  return most;
+}
+
+// ---------------------------------------------------------------------------
 // Express service
 //
 // A line earns express status by how it is built, not by a switch: long, with

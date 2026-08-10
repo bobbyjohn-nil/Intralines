@@ -138,6 +138,12 @@ export interface BusLine {
   headwayMin: number;
   /** rush-hour headway (7-9 & 16-18); defaults to headwayMin on old saves */
   peakHeadwayMin: number;
+  /** how this line's timetable is written; absent on saves from before modes */
+  schedMode?: 'simple' | 'advanced';
+  /** normal mode: buses on the road in [rush, off-peak] */
+  periodBuses?: number[];
+  /** advanced mode: minutes between buses per SCHED_PERIODS window */
+  periodHeadwayMin?: number[];
   /**
    * schedule padding at every stop, seconds. Slows the timetable but
    * absorbs traffic delays, keeping buses punctual.

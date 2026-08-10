@@ -199,10 +199,18 @@ button.chip:hover {
   justify-content: flex-start;
 }
 
-/* extra demand layers dropdown (tourism / education) */
-.heat-more {
+/* dock dropdowns (map layers, company panels) */
+.heat-more,
+.dock-menu {
   position: relative;
   display: flex;
+}
+
+/* divider inside a dock dropdown */
+.menu-sep {
+  height: 1px;
+  margin: 6px 4px;
+  background: rgba(60, 55, 40, 0.15);
 }
 
 .heat-menu {
@@ -222,6 +230,9 @@ button.chip:hover {
   flex-direction: column;
   gap: 4px;
   z-index: 30;
+  /* the layers menu is tall: never let it run off the top of a short window */
+  max-height: calc(100vh - 130px);
+  overflow-y: auto;
 }
 
 .heat-menu button {
@@ -691,6 +702,87 @@ button.chip:hover {
 .notice.bad {
   background: #c92a2a;
   color: #fff;
+}
+
+/* ---------- boot screen -> menu hand-off ---------- */
+
+.bus-wipe {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+/* the loading screen itself, towed off to the right. Its edge carries a soft
+   shadow because it leaves against a menu of nearly the same color — without
+   one the whole thing would be invisible. */
+.bus-wipe-sheet {
+  position: absolute;
+  inset: 0;
+  background: #f3edda;
+  box-shadow: -20px 0 38px rgba(60, 50, 25, 0.2);
+  animation: wipe-away 1.05s cubic-bezier(0.55, 0, 0.2, 1) forwards;
+}
+
+/* parented to the sheet, so it stays glued to the leading edge */
+.bus-wipe-bus {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  color: #2c2a24;
+  transform: translate(-96%, -50%);
+}
+
+@keyframes wipe-away {
+  0% { transform: translateX(-4%); }
+  100% { transform: translateX(106%); }
+}
+
+/* ---------- timetable editor ---------- */
+
+.sched-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 0;
+}
+
+.sched-when {
+  display: flex;
+  flex-direction: column;
+  min-width: 84px;
+  font-size: 12.5px;
+}
+
+.sched-when small {
+  opacity: 0.55;
+  font-size: 10.5px;
+}
+
+.sched-out {
+  margin-left: auto;
+  text-align: right;
+  font-size: 12.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.sched-out small {
+  display: block;
+  font-weight: 500;
+  opacity: 0.55;
+  font-size: 10.5px;
+}
+
+.sched-row.adv input[type='range'] {
+  flex: 1;
+  min-width: 0;
+}
+
+.buffer-select {
+  margin-top: 4px;
 }
 
 /* ---------- express lines ---------- */
