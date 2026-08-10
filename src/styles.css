@@ -693,6 +693,49 @@ button.chip:hover {
   color: #fff;
 }
 
+/* ---------- new-version banner ---------- */
+
+.update-banner {
+  position: fixed;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%);
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: min(620px, calc(100vw - 24px));
+  padding: 10px 12px 10px 16px;
+  border-radius: 12px;
+  background: #2c2a24;
+  color: #fffbe8;
+  font-size: 13.5px;
+  box-shadow: 0 6px 20px rgba(50, 40, 20, 0.32);
+}
+
+.update-banner b {
+  color: #ffe9a8;
+}
+
+/* the banner is dark, so invert the buttons to keep them readable */
+.update-banner .btn {
+  white-space: nowrap;
+  padding: 6px 12px;
+  background: transparent;
+  border-color: rgba(255, 251, 232, 0.35);
+  color: #fffbe8;
+}
+
+.update-banner .btn:hover:not(:disabled) {
+  border-color: rgba(255, 251, 232, 0.75);
+}
+
+.update-banner .btn.primary {
+  background: #ffe9a8;
+  border-color: #ffe9a8;
+  color: #2c2a24;
+}
+
 /* ---------- custom confirm dialog ---------- */
 
 .confirm-overlay {

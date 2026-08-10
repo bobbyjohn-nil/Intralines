@@ -19,6 +19,7 @@ import {
 import { RoadGraph, cumulativeDist } from './routing';
 import { fastDistM } from './geo';
 import { reportError } from './errors';
+import { backupUnreadableSave, readSave } from './migrate';
 
 export interface DraftLeg {
   path: LngLat[];
@@ -52,6 +53,8 @@ export interface GameState {
   loadingDetail: string;
   pack: CityPack | null;
   graph: RoadGraph | null;
+  /** true when the stored save came from a newer build: don't write over it */
+  saveBlocked: boolean;
 
   cash: number;
   clockMin: number;
@@ -622,6 +625,7 @@ export const useGame = create<GameState>((set, get) => {
     loadingDetail: '',
     pack: null,
     graph: null,
+    saveBlocked: false,
 
     cash: START_CASH,
     clockMin: 6 * 60, // Year 1 Q1 Day 1, 06:00
@@ -687,10 +691,25 @@ export const useGame = create<GameState>((set, get) => {
       const graph = new RoadGraph(pack);
       const saved = localStorage.getItem(SAVE_KEY_PREFIX + pack.meta.id);
       let base: Partial<GameState> = {};
+      let saveBlocked = false;
       if (saved) {
+        const read = readSave(pack.meta.id, saved);
+        if (!read.ok) {
+          // never let a fresh start quietly autosave over a company we simply
+          // couldn't read — keep a copy and say what happened
+          saveBlocked = read.reason === 'newer';
+          backupUnreadableSave(pack.meta.id, saved);
+          reportError(
+            'save',
+            new Error(`save ${read.reason} for ${pack.meta.id}`),
+            read.reason === 'newer'
+              ? 'This save was made by a newer version of the game. Reload the page to update, then continue — your save is untouched.'
+              : `Your ${pack.meta.name} save could not be read, so this is a fresh start. A copy of the old save has been kept in case it can be recovered.`,
+          );
+        }
         try {
-          const sv = JSON.parse(saved) as SaveGame;
-          if (sv.version === SAVE_VERSION && sv.cityId === pack.meta.id) {
+          const sv = read.ok ? read.save : null;
+          if (sv) {
             // node indexes don't survive across sessions (stops may split
             // streets); re-anchor each saved stop into the fresh graph
             for (const st of sv.stops) {
@@ -788,6 +807,9 @@ export const useGame = create<GameState>((set, get) => {
         heatmap: 'off',
         trafficView: false,
         mapEpoch: 0,
+        // a save from a newer build stays exactly where it is: this session is
+        // read-only so a reload can hand it back intact
+        saveBlocked: saveBlocked,
         ...base,
       });
       const st = get();
@@ -1766,6 +1788,8 @@ export const useGame = create<GameState>((set, get) => {
     saveGame: () => {
       const s = get();
       if (!s.pack) return;
+      // the save on disk belongs to a newer build — leave it alone
+      if (s.saveBlocked) return;
       const sv: SaveGame = {
         version: SAVE_VERSION,
         cityId: s.pack.meta.id,
@@ -1811,7 +1835,10 @@ export const useGame = create<GameState>((set, get) => {
     importSave: (json) => {
       try {
         const sv = JSON.parse(json) as SaveGame;
-        if (typeof sv.cityId !== 'string' || sv.version !== SAVE_VERSION) return false;
+        // accept anything this build can actually read back (older formats
+        // included); a file from a newer build would only load as a ruin
+        if (typeof sv.cityId !== 'string') return false;
+        if (!readSave(sv.cityId, json).ok) return false;
         localStorage.setItem(SAVE_KEY_PREFIX + sv.cityId, json);
         return true;
       } catch {

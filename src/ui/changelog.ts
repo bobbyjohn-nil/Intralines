@@ -15,6 +15,18 @@ export interface LogEntry {
 
 export const CHANGELOG: LogEntry[] = [
   {
+    version: '1.18',
+    date: 'Aug 10, 2026',
+    title: 'A proper bus, and updates that behave',
+    items: [
+      'The bus in the logo (and on the founding screen, the loading screen and every model in the Fleet list) is an actual bus now instead of a boxy tram car: raked windscreen, window band with pillars, a passenger door, headlight and wheels tucked into arches. Articulated models show their concertina joint and third axle, and the minibus is properly stubby.',
+      'Updates no longer break your game. Every build is stamped, and a tab that has been open across a new release now notices, saves your company, and reloads onto the new version cleanly — automatically if you are sitting on the menu, or on your say-so from a small banner while you are playing.',
+      'If a reload still lands on a stale cached page, the game now forces a genuinely fresh copy from the server rather than reloading into the same broken state, and tidies the address bar afterwards.',
+      'Your saves survive updates. Saves written by older versions load properly instead of quietly starting you over, and a save from a NEWER version is never overwritten by an older tab — the game tells you to reload and leaves it untouched. Anything unreadable is kept as a backup copy instead of being lost.',
+      'City data left behind by an older version is now cleared out instead of sitting in browser storage forever, which is what used to fill up storage and make saving fail after a few updates. Checking which cities are downloaded is also much faster on the home screen.',
+    ],
+  },
+  {
     version: '1.17',
     date: 'Aug 10, 2026',
     title: 'Sandbox keys to the city',

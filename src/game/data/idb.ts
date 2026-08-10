@@ -78,25 +78,89 @@ function ensureMigrated(): Promise<void> {
   return ready;
 }
 
-export async function idbGetPack<T>(id: string): Promise<T | null> {
+/**
+ * Tiny companion record holding just the format version of a stored pack, so
+ * "is this city cached?" costs a few bytes instead of deserialising tens of
+ * megabytes.
+ */
+const metaKey = (id: string): string => `${id}::meta`;
+
+async function writeMeta(id: string): Promise<void> {
   try {
-    await ensureMigrated();
     const db = await open(DB_NAME);
     try {
-      return await new Promise((resolve) => {
-        const tx = db.transaction(STORE, 'readonly');
-        const req = tx.objectStore(STORE).get(id);
-        req.onsuccess = () => {
-          const v = req.result;
-          resolve(v && v.formatVersion === PACK_FORMAT_VERSION ? (v.pack as T) : null);
-        };
-        req.onerror = () => resolve(null);
+      await new Promise<void>((resolve) => {
+        const tx = db.transaction(STORE, 'readwrite');
+        tx.objectStore(STORE).put({ formatVersion: PACK_FORMAT_VERSION }, metaKey(id));
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => resolve();
       });
     } finally {
       db.close();
     }
   } catch {
+    // best effort: without it we just take the slow path again next time
+  }
+}
+
+export async function idbGetPack<T>(id: string): Promise<T | null> {
+  try {
+    await ensureMigrated();
+    const db = await open(DB_NAME);
+    let stale = false;
+    try {
+      const pack = await new Promise<T | null>((resolve) => {
+        const tx = db.transaction(STORE, 'readonly');
+        const req = tx.objectStore(STORE).get(id);
+        req.onsuccess = () => {
+          const v = req.result;
+          if (v && v.formatVersion === PACK_FORMAT_VERSION) {
+            resolve(v.pack as T);
+            return;
+          }
+          // a pack left behind by an older build is dead weight — often tens
+          // of megabytes of it, which is what pushes storage over quota and
+          // starts breaking saves after an update
+          // (a pack from a *newer* build stays: that build can still use it)
+          stale = !!v && !(v.formatVersion > PACK_FORMAT_VERSION);
+          resolve(null);
+        };
+        req.onerror = () => resolve(null);
+      });
+      return pack;
+    } finally {
+      db.close();
+      if (stale) void idbDeletePack(id);
+    }
+  } catch {
     return null;
+  }
+}
+
+/** cheap "is this city downloaded, in a format we can still use?" check */
+export async function idbHasPack(id: string): Promise<boolean> {
+  try {
+    await ensureMigrated();
+    const db = await open(DB_NAME);
+    try {
+      const meta = await new Promise<{ formatVersion?: number } | null>((resolve) => {
+        const tx = db.transaction(STORE, 'readonly');
+        const req = tx.objectStore(STORE).get(metaKey(id));
+        req.onsuccess = () => resolve(req.result ?? null);
+        req.onerror = () => resolve(null);
+      });
+      if (meta) return meta.formatVersion === PACK_FORMAT_VERSION;
+    } finally {
+      db.close();
+    }
+    // written before meta records existed: fall back to the full read (which
+    // also clears it out if it turns out to be stale), then leave a meta
+    // record behind so the next check stays cheap
+    const ok = (await idbGetPack(id)) !== null;
+    if (ok) await writeMeta(id);
+    return ok;
+  } catch {
+    return false;
   }
 }
 
@@ -107,7 +171,9 @@ export async function idbPutPack(id: string, pack: unknown): Promise<void> {
     try {
       await new Promise<void>((resolve) => {
         const tx = db.transaction(STORE, 'readwrite');
-        tx.objectStore(STORE).put({ formatVersion: PACK_FORMAT_VERSION, pack }, id);
+        const store = tx.objectStore(STORE);
+        store.put({ formatVersion: PACK_FORMAT_VERSION, pack }, id);
+        store.put({ formatVersion: PACK_FORMAT_VERSION }, metaKey(id));
         tx.oncomplete = () => resolve();
         tx.onerror = () => resolve();
       });
@@ -126,7 +192,9 @@ export async function idbDeletePack(id: string): Promise<void> {
     try {
       await new Promise<void>((resolve) => {
         const tx = db.transaction(STORE, 'readwrite');
-        tx.objectStore(STORE).delete(id);
+        const store = tx.objectStore(STORE);
+        store.delete(id);
+        store.delete(metaKey(id));
         tx.oncomplete = () => resolve();
         tx.onerror = () => resolve();
       });

@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - claude/city-bus-manager-game-rmdul2
+      - claude/bus-appearance-update-stability-rnemi4
   workflow_dispatch:
 
 permissions:

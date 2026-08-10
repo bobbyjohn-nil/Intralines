@@ -9,11 +9,38 @@
       // Boot safety net. Two jobs:
       // 1) After a deploy, a cached copy of this page can reference hashed
       //    asset files that no longer exist — catch the failed load and
-      //    refresh once to pick up the new page.
+      //    refresh to pick up the new page. The first retry is a plain
+      //    reload; if that still lands on the stale page (browsers may
+      //    answer it from their HTTP cache) the second one adds a
+      //    cache-busting query so the server has to hand over fresh HTML.
+      //    main.tsx clears the counter and tidies the URL once the app is
+      //    actually running, so the net re-arms for the next deploy.
       // 2) If the app still hasn't rendered a few seconds later, replace
       //    the blank screen with a readable error + recovery buttons.
       (function () {
         var bootError = '';
+        var reloadForStaleAssets = function () {
+          var tries = 0;
+          try {
+            tries = parseInt(sessionStorage.getItem('il-reloaded') || '0', 10) || 0;
+            sessionStorage.setItem('il-reloaded', String(tries + 1));
+          } catch (err) {
+            // no sessionStorage: allow exactly the one plain reload
+            if (/[?&]fresh=/.test(location.search)) return false;
+            tries = 1;
+          }
+          if (tries === 0) {
+            location.reload();
+            return true;
+          }
+          if (tries === 1) {
+            // drop any existing query (the app uses none of its own) so the
+            // buster can't stack up across attempts
+            location.replace(location.href.split('#')[0].split('?')[0] + '?fresh=' + Date.now());
+            return true;
+          }
+          return false; // two goes and still broken — show the error card
+        };
         window.addEventListener(
           'error',
           function (e) {
@@ -21,11 +48,7 @@
             var failedAsset =
               (t && t.tagName === 'SCRIPT' && t.src) ||
               (t && t.tagName === 'LINK' && t.rel === 'stylesheet');
-            if (failedAsset && !sessionStorage.getItem('il-reloaded')) {
-              sessionStorage.setItem('il-reloaded', '1');
-              location.reload();
-              return;
-            }
+            if (failedAsset && reloadForStaleAssets()) return;
             if (e.error) {
               bootError = String((e.error && e.error.stack) || e.message || e.error);
             } else if (failedAsset) {
@@ -35,7 +58,12 @@
           true
         );
         window.addEventListener('unhandledrejection', function (e) {
-          if (!bootError) bootError = 'Unhandled: ' + String(e.reason);
+          var reason = String((e.reason && e.reason.message) || e.reason);
+          // a code-split chunk that vanished in a deploy fails this way
+          if (/dynamically imported module|Importing a module script failed/i.test(reason)) {
+            if (reloadForStaleAssets()) return;
+          }
+          if (!bootError) bootError = 'Unhandled: ' + reason;
         });
         setTimeout(function () {
           var root = document.getElementById('root');
@@ -61,7 +89,9 @@
             '</div>' +
             '<p style="margin:12px 0 0;font-size:12px;opacity:.6">Your saved games are kept either way.</p></div>';
           document.getElementById('il-reload').onclick = function () {
-            location.reload();
+            // always past the HTTP cache: a plain reload is exactly what has
+            // already failed to help by the time this card is on screen
+            location.replace(location.href.split('#')[0].split('?')[0] + '?fresh=' + Date.now());
           };
           document.getElementById('il-clear').onclick = function () {
             // clear the store CONTENTS and wait for the transaction to

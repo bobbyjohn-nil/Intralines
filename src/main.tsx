@@ -4,17 +4,20 @@ import { ErrorBoundary, ErrorCenter } from './ui/ErrorCenter';
 import { ConfirmHost } from './ui/Confirm';
 import { installGlobalErrorHandlers } from './game/errors';
 import { migrateLocalStorage } from './game/migrate';
+import { tidyUpdateUrl } from './game/update';
 import './styles.css';
 
 installGlobalErrorHandlers();
 migrateLocalStorage();
 
-// the app booted, so the stale-deploy reload guard can re-arm
+// this bundle is running, so the stale-deploy reload guard can re-arm and the
+// cache-busting parameter it may have added can come back off the address bar
 try {
   sessionStorage.removeItem('il-reloaded');
 } catch {
   // storage unavailable — fine
 }
+tidyUpdateUrl();
 
 // No StrictMode: the MapLibre map + WebGL bus layer must not double-mount.
 createRoot(document.getElementById('root')!).render(

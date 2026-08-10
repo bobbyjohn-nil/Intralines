@@ -245,9 +245,56 @@ export const IconBank = (p: IconProps) => (
   </Svg>
 );
 
-/** side-view bus silhouette whose length varies by model */
+/**
+ * Side-view bus, nose pointing right. `length` is the model's lengthFactor
+ * (0.55 minibus … 1.6 articulated). Drawn as a real bus rather than a box on
+ * wheels: raked windscreen, window band with pillars, a passenger door behind
+ * the front axle and wheels tucked into arches. Articulated models get a
+ * concertina joint and a third axle.
+ */
 export const BusSide = ({ length = 1, size = 40 }: { length?: number; size?: number }) => {
-  const w = 20 + length * 14;
+  const w = 20 + length * 14; // body length, in view units
+  const x0 = 3; // tail
+  const x1 = x0 + w; // nose
+  const roof = 4;
+  const floor = 17;
+  const axleY = 18.5;
+  const tire = 2.7;
+
+  const frontAxle = x1 - 6.4;
+  const rearAxle = x0 + Math.max(6, w * 0.19);
+  const artic = length >= 1.4;
+  const joint = x0 + w * 0.4;
+  const midAxle = x0 + w * 0.54;
+
+  // door sits just behind the front wheel, glass band fills everything behind
+  const doorX1 = frontAxle - tire - 2.2;
+  const doorX0 = doorX1 - 2.6;
+  const bandX0 = x0 + 2.4;
+  const bandX1 = doorX0 - 1.1;
+  const glassTop = 6.4;
+  const glassBot = 10.7;
+
+  // wheel arch: a bump in the floor line, drawn right-to-left
+  const arch = (cx: number) =>
+    `L ${(cx + tire + 0.8).toFixed(1)} ${floor} ` +
+    `Q ${cx.toFixed(1)} ${floor - 4.7} ${(cx - tire - 0.8).toFixed(1)} ${floor}`;
+
+  const pillars: number[] = [];
+  const panes = Math.max(2, Math.round((bandX1 - bandX0) / 5.4));
+  for (let i = 1; i < panes; i++) {
+    pillars.push(bandX0 + ((bandX1 - bandX0) * i) / panes);
+  }
+
+  const body =
+    `M ${x0} ${floor - 1.4} L ${x0} ${roof + 2.6} Q ${x0} ${roof} ${x0 + 2.6} ${roof} ` +
+    `L ${x1 - 5} ${roof} Q ${x1 - 3.2} ${roof} ${(x1 - 2.6).toFixed(1)} ${roof + 1.2} ` +
+    `L ${x1} ${roof + 7.6} L ${x1} ${floor - 1.2} Q ${x1} ${floor} ${x1 - 1.4} ${floor} ` +
+    arch(frontAxle) +
+    (artic ? arch(midAxle) : '') +
+    arch(rearAxle) +
+    `L ${x0 + 1.4} ${floor} Q ${x0} ${floor} ${x0} ${floor - 1.4} Z`;
+
   return (
     <svg
       width={(size * (w + 8)) / 42}
@@ -257,12 +304,63 @@ export const BusSide = ({ length = 1, size = 40 }: { length?: number; size?: num
       stroke="currentColor"
       strokeWidth="1.7"
       strokeLinecap="round"
+      strokeLinejoin="round"
       aria-hidden="true"
     >
-      <rect x="3" y="4" width={w} height="14" rx="3" />
-      <path d={`M7 10h${w - 8}`} opacity="0.5" />
-      <circle cx="10" cy="20.5" r="2.6" fill="currentColor" stroke="none" />
-      <circle cx={w - 4} cy="20.5" r="2.6" fill="currentColor" stroke="none" />
+      <path d={body} />
+      {/* windscreen, following the rake of the nose */}
+      <path
+        d={`M ${x1 - 7.2} ${glassTop} L ${x1 - 3.9} ${glassTop} L ${x1 - 1.8} ${glassBot + 0.4} L ${x1 - 7.2} ${glassBot + 0.4} Z`}
+        strokeWidth="1.3"
+        opacity="0.85"
+      />
+      {/* passenger glass + pillars */}
+      <rect
+        x={bandX0}
+        y={glassTop}
+        width={Math.max(3, bandX1 - bandX0)}
+        height={glassBot - glassTop}
+        rx="1.1"
+        strokeWidth="1.3"
+        opacity="0.85"
+      />
+      {pillars.map((px) => (
+        <path
+          key={px}
+          d={`M ${px.toFixed(1)} ${glassTop} V ${glassBot}`}
+          strokeWidth="1.1"
+          opacity="0.5"
+        />
+      ))}
+      {/* two-leaf passenger door */}
+      <rect
+        x={doorX0}
+        y={glassTop - 0.5}
+        width={doorX1 - doorX0}
+        height={floor - glassTop - 0.4}
+        rx="1"
+        strokeWidth="1.3"
+        opacity="0.75"
+      />
+      <path
+        d={`M ${((doorX0 + doorX1) / 2).toFixed(1)} ${glassTop - 0.2} V ${floor - 1.2}`}
+        strokeWidth="1"
+        opacity="0.45"
+      />
+      {/* belt line down the flank */}
+      <path d={`M ${bandX0} 13.4 H ${bandX1}`} strokeWidth="1.1" opacity="0.4" />
+      {artic && (
+        <path
+          d={`M ${(joint - 0.8).toFixed(1)} ${roof + 1} V ${floor - 1} M ${(joint + 0.8).toFixed(1)} ${roof + 1} V ${floor - 1}`}
+          strokeWidth="1.2"
+          opacity="0.55"
+        />
+      )}
+      {/* headlight */}
+      <circle cx={x1 - 1.7} cy="14.3" r="0.85" fill="currentColor" stroke="none" />
+      <circle cx={frontAxle} cy={axleY} r={tire} fill="currentColor" stroke="none" />
+      {artic && <circle cx={midAxle} cy={axleY} r={tire} fill="currentColor" stroke="none" />}
+      <circle cx={rearAxle} cy={axleY} r={tire} fill="currentColor" stroke="none" />
     </svg>
   );
 };

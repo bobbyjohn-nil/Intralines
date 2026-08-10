@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { CITIES } from '../game/data/cities';
 import { loadCity } from '../game/data/loadCity';
-import { idbClearAllPacks, idbDeletePack, idbGetPack } from '../game/data/idb';
+import { idbClearAllPacks, idbDeletePack, idbHasPack } from '../game/data/idb';
 import { SAVE_KEY_PREFIX } from '../game/constants';
 import { reportError } from '../game/errors';
 import { askConfirm } from './Confirm';
@@ -69,7 +69,7 @@ export function Menu() {
     (async () => {
       const flags: Record<string, boolean> = {};
       for (const c of CITIES) {
-        if (c.kind === 'real') flags[c.id] = (await idbGetPack(c.id)) !== null;
+        if (c.kind === 'real') flags[c.id] = await idbHasPack(c.id);
       }
       setCached(flags);
     })();
