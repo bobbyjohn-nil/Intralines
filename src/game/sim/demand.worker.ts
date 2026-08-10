@@ -23,6 +23,10 @@ import {
   CAR_PARK_PENALTY_MIN,
   WALK_MIN_PER_KM,
   DRIVER_WAGE_PER_HOUR,
+  EXPRESS_RIDE_WEIGHT,
+  EXPRESS_SUBSIDY_MULT,
+  fareTimePenaltyMin,
+  isExpress,
 } from '../constants';
 
 interface WBlockGroup {
@@ -187,9 +191,13 @@ function computeNetwork(msg: NetworkMsg) {
     const stopsOnLine = l.stopIds
       .map((sid) => stopIndex.get(sid))
       .filter((x): x is number => x !== undefined);
+    // express standing is earned by the shape of the route, so it follows the
+    // line around: edit the stops and it can be won or lost
+    const express = isExpress(l.pathLenM, l.stopIds.length);
+    const farePenMin = fareTimePenaltyMin(l.fare, express);
     return {
       l, rideMinFull, cycleMin, cycleKm, vehiclesNeeded, headwayEff, headwayEffPeak,
-      effAt, headwayForWait, avgDelayMin, stopsOnLine,
+      effAt, headwayForWait, avgDelayMin, stopsOnLine, express, farePenMin,
     };
   });
 
@@ -246,6 +254,19 @@ function computeNetwork(msg: NetworkMsg) {
     const dM = Math.abs(lc.l.stopDist[posB] - lc.l.stopDist[posA]);
     const stopsBetween = Math.abs(posB - posA) - 1;
     return (dM / 1000 / lc.l.kmh) * 60 + Math.max(0, stopsBetween) * (DWELL_SEC / 60);
+  };
+
+  /**
+   * What the ride *feels* like, which is what riders choose on: express time
+   * on board counts for less, and the fare shows up as minutes. Buses still
+   * run to the real clock — this only shifts who decides to board.
+   */
+  const perceivedRideMin = (li: number, posA: number, posB: number): number => {
+    const lc = lineCalc[li];
+    const t = rideMin(li, posA, posB) * (lc.express ? EXPRESS_RIDE_WEIGHT : 1);
+    // a bargain fare makes a ride feel shorter, but never free: without a
+    // floor a cheap two-stop hop could price itself below zero minutes
+    return Math.max(0.5, t + lc.farePenMin);
   };
 
   // transfer clusters: stops within a short walk of each other act as one
@@ -337,7 +358,7 @@ function computeNetwork(msg: NetworkMsg) {
             if (la.li === lb.li) {
               // direct
               const t =
-                a.walkMin + waitA + rideMin(la.li, la.pos, lb.pos) + b.walkMin;
+                a.walkMin + waitA + perceivedRideMin(la.li, la.pos, lb.pos) + b.walkMin;
               if (t < best) {
                 best = t;
                 bl1 = la.li;
@@ -349,11 +370,11 @@ function computeNetwork(msg: NetworkMsg) {
               const t =
                 a.walkMin +
                 waitA +
-                rideMin(la.li, la.pos, sh.posA) +
+                perceivedRideMin(la.li, la.pos, sh.posA) +
                 sh.pen +
                 sh.walkMin +
                 Math.min(lineCalc[lb.li].headwayForWait / 2, MAX_WAIT_MIN) +
-                rideMin(lb.li, sh.posB, lb.pos) +
+                perceivedRideMin(lb.li, sh.posB, lb.pos) +
                 b.walkMin;
               if (t < best) {
                 best = t;
@@ -482,7 +503,9 @@ function computeNetwork(msg: NetworkMsg) {
       dailyBoardings: Math.round(daily),
       hourly,
       peakLoadFactor: Math.min(loadFactor, 2),
-      dailyRevenue: daily * (l.fare + SUBSIDY_PER_RIDER),
+      dailyRevenue:
+        daily * (l.fare + SUBSIDY_PER_RIDER * (lc.express ? EXPRESS_SUBSIDY_MULT : 1)),
+      express: lc.express,
       dailyCost,
       vehiclesNeeded: lc.vehiclesNeeded,
       cycleMin: lc.cycleMin,

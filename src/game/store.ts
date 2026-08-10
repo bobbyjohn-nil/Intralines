@@ -10,7 +10,7 @@ import {
   HEADWAY_CHOICES, LINE_COLORS, LOAN_AMOUNT, MAX_DEPOTS,
   LOAN_FEE, LOAN_INTEREST_PER_DAY, LOAN_PAYOFF, MECHANIC_WAGE_PER_DAY, quarterLabel,
   nextDepotCost, OFFICE_OVERHEAD_PER_DAY, QUARTER_MIN, REFURB_COST_SHARE, REPORT_FINE,
-  REPORT_GRANT_PER_POINT, SAVE_KEY_PREFIX,
+  REPORT_GRANT_PER_POINT, SAVE_KEY_PREFIX, EXPRESS_SUBSIDY_MULT,
   SAVE_VERSION, SPEEDS, START_CASH, STOP_COST, STOP_MAX_KMH, STOP_TIER_MIN_LINES,
   STOP_TIER_NAMES,
   STOP_UPGRADE_COST, SUBSIDY_PER_RIDER, WASH_BAY_COST, WEAR_COST_PENALTY, WEAR_PER_DAY,
@@ -847,7 +847,9 @@ export const useGame = create<GameState>((set, get) => {
           if (!line) continue;
           const perMinRiders = pl.hourly[hour] / 60;
           dRiders += perMinRiders * dtMin;
-          dCash += perMinRiders * dtMin * (line.fare + SUBSIDY_PER_RIDER);
+          // the city pays a premium on every express rider
+          const subsidy = SUBSIDY_PER_RIDER * (pl.express ? EXPRESS_SUBSIDY_MULT : 1);
+          dCash += perMinRiders * dtMin * (line.fare + subsidy);
           const svcMin = (line.lastHour - line.firstHour) * 60;
           if (hour >= line.firstHour && hour < line.lastHour && svcMin > 0) {
             dCash -= (pl.dailyCost / svcMin) * dtMin;

@@ -13,9 +13,11 @@ import {
   quarterLabel, REFUEL_MIN, REFURB_COST_SHARE,
   STOP_COST, STOP_TIER_CAPACITY, STOP_TIER_NAMES,
   STOP_UPGRADE_COST, SUBSIDY_PER_RIDER, WASH_BAY_COST, WORKSHOP_COST, wearLabel,
+  EXPRESS_MIN_LEN_M, EXPRESS_MIN_SPACING_M, EXPRESS_MIN_STOPS, EXPRESS_SUBSIDY_MULT,
+  FARE_REFERENCE, isExpress, stopSpacingM,
 } from '../game/constants';
 import { fmtInt, fmtMoney } from './format';
-import type { CityPack, FleetEntry, LineStats, LngLat } from '../game/types';
+import type { BusLine, CityPack, FleetEntry, LineStats, LngLat } from '../game/types';
 import { fastDistM } from '../game/geo';
 import { StationScene } from './StationScene';
 import { askConfirm } from './Confirm';
@@ -203,6 +205,45 @@ function PanelTitle({ title, onBack }: { title: string; onBack?: () => void }) {
 
 // ---------------------------------------------------------------------------
 
+/**
+ * Express standing, and — when a line just misses — exactly what it would
+ * take. Nobody would ever discover a rule about average stop spacing on
+ * their own, so the panel says it out loud either way.
+ */
+function ExpressNote({ line }: { line: BusLine }) {
+  const stops = line.stopIds.length;
+  const spacing = stopSpacingM(line.pathLenM, stops);
+  if (isExpress(line.pathLenM, stops)) {
+    return (
+      <p className="express-note on">
+        <b>EXPRESS</b> — stops average {(spacing / 1000).toFixed(1)} km apart. Riders
+        prefer the limited-stop run, they mind a higher fare half as much, and the
+        city pays {Math.round((EXPRESS_SUBSIDY_MULT - 1) * 100)}% more subsidy on
+        every rider.
+      </p>
+    );
+  }
+  if (stops < EXPRESS_MIN_STOPS || line.pathLenM < EXPRESS_MIN_LEN_M * 0.6) {
+    return null; // far too short to be worth mentioning
+  }
+  const needSpacing = spacing < EXPRESS_MIN_SPACING_M;
+  return (
+    <p className="express-note">
+      Not an express run:{' '}
+      {needSpacing
+        ? `stops average ${Math.round(spacing)} m apart, and an express needs ${
+            EXPRESS_MIN_SPACING_M / 1000
+          } km — thin them out`
+        : `the route is ${(line.pathLenM / 1000).toFixed(1)} km, and an express needs ${
+            EXPRESS_MIN_LEN_M / 1000
+          } km — push it further out`}
+      .
+    </p>
+  );
+}
+
+// ---------------------------------------------------------------------------
+
 function LinesPanel() {
   const lines = useGame((s) => s.lines);
   const stats = useGame((s) => s.stats);
@@ -224,7 +265,12 @@ function LinesPanel() {
             <button key={l.id} className="row" onClick={() => selectLine(l.id)}>
               <span className="line-dot" style={{ background: l.color }} />
               <span className="row-main">
-                <b>{l.name}</b>
+                <b>
+                  {l.name}
+                  {isExpress(l.pathLenM, l.stopIds.length) && (
+                    <span className="express-tag">EXPRESS</span>
+                  )}
+                </b>
                 <small>
                   {l.stopIds.length} stops · {(l.pathLenM / 1000).toFixed(1)} km ·{' '}
                   {l.vehicles} {l.vehicles === 1 ? 'bus' : 'buses'}
@@ -326,6 +372,7 @@ function LineEditPanel() {
         <span>Within a short walk</span>
         <b>{fmtInt(lineReach)} residents</b>
       </div>
+      <ExpressNote line={line} />
       {refuels > 0 && (
         <p className="hint">
           Each bus burns through its {model.tankKm} km{' '}
@@ -450,6 +497,17 @@ function LineEditPanel() {
           type="range" min={100} max={500} step={25} value={Math.round(line.fare * 100)}
           onChange={(e) => updateLine(line.id, { fare: +e.target.value / 100 })}
         />
+        <small className="dim">
+          {Math.abs(line.fare - FARE_REFERENCE) < 0.01
+            ? `$${FARE_REFERENCE.toFixed(2)} is what riders here expect to pay.`
+            : line.fare > FARE_REFERENCE
+              ? `Above the $${FARE_REFERENCE.toFixed(2)} riders expect — some will drive instead${
+                  isExpress(line.pathLenM, line.stopIds.length)
+                    ? ', though express riders mind it half as much'
+                    : ''
+                }.`
+              : `Under the $${FARE_REFERENCE.toFixed(2)} riders expect — cheap seats pull people out of their cars.`}
+        </small>
       </div>
 
       <StopList lineId={line.id} stopIds={line.stopIds} />

@@ -252,6 +252,64 @@ export function congestionGain(kmh: number, urban: number): number {
   return classWeight * (0.35 + 0.65 * Math.min(Math.max(urban, 0), 1));
 }
 
+// ---------------------------------------------------------------------------
+// Express service
+//
+// A line earns express status by how it is built, not by a switch: long, with
+// stops spaced far enough apart that it is skipping neighborhoods to move
+// people across the city. Fewer stops already makes such a line quicker; these
+// are the rewards on top of that.
+
+/** minimum end-to-end length before a line can count as express */
+export const EXPRESS_MIN_LEN_M = 5_000;
+/** minimum average distance between consecutive stops */
+export const EXPRESS_MIN_SPACING_M = 1_200;
+/** minimum stops — a two-stop shuttle is not a route */
+export const EXPRESS_MIN_STOPS = 3;
+/**
+ * Riders prefer limited-stop service by more than the minutes it saves them:
+ * fewer starts and stops, a seat further out, a trip that feels direct. Their
+ * perceived time on board is scaled by this.
+ */
+export const EXPRESS_RIDE_WEIGHT = 0.85;
+/** express riders shrug off this much of a fare rise (0 = none, 1 = all) */
+export const EXPRESS_FARE_TOLERANCE = 0.5;
+/** the Transit Authority pays this much more per express rider */
+export const EXPRESS_SUBSIDY_MULT = 1.5;
+
+/**
+ * Fare the riders in this city consider normal. Charging it costs nothing;
+ * everything above or below is what they actually react to.
+ */
+export const FARE_REFERENCE = 2.25;
+/** what a rider's time is worth, in dollars per minute, for fare tradeoffs */
+export const FARE_VALUE_PER_MIN = 0.18;
+
+/** average metres between consecutive stops, or 0 for a line with no legs */
+export function stopSpacingM(pathLenM: number, stopCount: number): number {
+  return stopCount > 1 ? pathLenM / (stopCount - 1) : 0;
+}
+
+/** does this line run as an express? Shared by the sim, the ledger and the UI */
+export function isExpress(pathLenM: number, stopCount: number): boolean {
+  return (
+    stopCount >= EXPRESS_MIN_STOPS &&
+    pathLenM >= EXPRESS_MIN_LEN_M &&
+    stopSpacingM(pathLenM, stopCount) >= EXPRESS_MIN_SPACING_M
+  );
+}
+
+/**
+ * How many minutes of perceived travel a line's fare adds. Only the gap from
+ * the going rate counts, so the default fare leaves the ride exactly as
+ * attractive as it has always been — undercut it and riders come, gouge them
+ * and they drive instead. Express riders are half as touchy.
+ */
+export function fareTimePenaltyMin(fare: number, express: boolean): number {
+  const gap = (fare - FARE_REFERENCE) / FARE_VALUE_PER_MIN;
+  return gap * (express ? EXPRESS_FARE_TOLERANCE : 1);
+}
+
 export function trafficFactor(hour: number): number {
   const h = ((hour % 24) + 24) % 24;
   for (let i = 1; i < TRAFFIC_ANCHORS.length; i++) {

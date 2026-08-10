@@ -161,6 +161,8 @@ export interface LineStats {
   /** boardings by hour of day (length 24) */
   hourly: number[];
   peakLoadFactor: number; // riders on busiest hour vs capacity offered
+  /** running as an express: long route, stops spaced far apart */
+  express: boolean;
   dailyRevenue: number;
   dailyCost: number;
   vehiclesNeeded: number;

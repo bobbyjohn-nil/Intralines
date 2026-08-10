@@ -693,6 +693,39 @@ button.chip:hover {
   color: #fff;
 }
 
+/* ---------- express lines ---------- */
+
+.express-tag {
+  margin-left: 7px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: #1d3f7a;
+  color: #ffe9a8;
+  font-size: 9.5px;
+  letter-spacing: 0.06em;
+  vertical-align: 1px;
+}
+
+.express-note {
+  margin: 8px 0 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+  opacity: 0.75;
+}
+
+.express-note.on {
+  padding: 8px 10px;
+  border-radius: 9px;
+  background: rgba(29, 63, 122, 0.09);
+  border: 1px solid rgba(29, 63, 122, 0.25);
+  opacity: 1;
+}
+
+.express-note.on b {
+  color: #1d3f7a;
+  letter-spacing: 0.06em;
+}
+
 /* ---------- new-version banner ---------- */
 
 .update-banner {
