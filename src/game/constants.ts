@@ -131,6 +131,26 @@ export const CAPTIVE_SHARE = 0.13;
 export const MODE_TAU = 9;
 export const MAX_WAIT_MIN = 15; // schedule-timing caps effective wait
 
+/**
+ * Visitor trips generated per tourism-sector job per day. A hotel desk, a
+ * gallery attendant and a waiter each stand for a handful of visitors moving
+ * around the city.
+ */
+export const VISITOR_TRIPS_PER_TOURISM_JOB = 1.2;
+/** how strongly the airport and the station pull, against another sight */
+export const DEPARTURE_PULL = 0.8;
+
+/**
+ * Visitors keep different hours: no dawn rush, a long middle of the day going
+ * from sight to sight, and a drift back to the hotel through the evening.
+ * Sums to 1, like the commuter profile.
+ */
+export const TOURIST_PROFILE = [
+  0.0041, 0.002, 0.001, 0.001, 0.002, 0.0082, 0.0184, 0.0306, 0.0459, 0.0633,
+  0.0765, 0.0816, 0.0837, 0.0816, 0.0796, 0.0755, 0.0694, 0.0633, 0.0592, 0.0531,
+  0.0449, 0.0306, 0.0163, 0.0082,
+];
+
 /** hourly share of daily demand (sums to 1) — twin commute peaks */
 export const HOURLY_PROFILE = [
   0.002, 0.001, 0.001, 0.002, 0.006, 0.02, 0.055, 0.095, 0.085, 0.055,

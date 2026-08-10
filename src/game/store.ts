@@ -177,6 +177,9 @@ function makeWorker(pack: CityPack, onStats: (stats: NetworkStats) => void): Wor
       centroid: b.centroid,
       pop: b.pop,
       jobs: b.jobs,
+      tour: b.tour,
+      air: b.air,
+      rail: b.rail,
     })),
     calib: pack.meta.calib,
   });

@@ -24,6 +24,9 @@ import {
   WALK_MIN_PER_KM,
   DRIVER_WAGE_PER_HOUR,
   EXPRESS_RIDE_WEIGHT,
+  TOURIST_PROFILE,
+  VISITOR_TRIPS_PER_TOURISM_JOB,
+  DEPARTURE_PULL,
   headwayAtHour,
   peakBusesNeeded,
   EXPRESS_SUBSIDY_MULT,
@@ -35,6 +38,11 @@ interface WBlockGroup {
   centroid: LngLat;
   pop: number;
   jobs: number;
+  /** tourism-sector jobs — attractions, hotels, restaurants */
+  tour?: number;
+  /** air and rail trips generated here: where visitors leave from */
+  air?: number;
+  rail?: number;
 }
 
 interface WLine {
@@ -86,12 +94,58 @@ let calib = { workforceRate: 0.45, gravityBetaKm: 4, carSpeedKmh: 35 };
 let cosLat = 1;
 /** T[i*n+j]: daily home(i)->work(j) commuters (gravity), network-independent */
 let T: Float32Array | null = null;
+/** TT[i*n+j]: daily visitor trips — a different animal, see buildTourism() */
+let TT: Float32Array | null = null;
 let distKm: Float32Array | null = null;
 
 function fastKm(a: LngLat, b: LngLat): number {
   const dx = (b[0] - a[0]) * 111.32 * cosLat;
   const dy = (b[1] - a[1]) * 110.54;
   return Math.sqrt(dx * dx + dy * dy);
+}
+
+/**
+ * Visitors do not commute.
+ *
+ * A resident's day is a line: start point in the morning, end point all day,
+ * start point again at night. A visitor's day is a loop — they hop between
+ * the things they came to see, drift back to a hotel in the evening, and at
+ * some point leave through the airport or the station. So their trips are
+ * generated between attraction-heavy areas rather than from homes to jobs,
+ * over shorter hops (nobody crosses the city twice between two museums), with
+ * a slice of the day's trips aimed at the places you leave a city from.
+ *
+ * The one honest limitation: the census sector data lumps hotels in with
+ * restaurants and venues under tourism, so "back to the hotel" is really
+ * "back into the tourist quarter", which is where the hotels are anyway.
+ */
+function buildTourism(): void {
+  const n = bgs.length;
+  TT = new Float32Array(n * n);
+  // sightseeing hops are local — a visitor picks the next thing nearby
+  const beta = calib.gravityBetaKm * 0.6;
+  for (let i = 0; i < n; i++) {
+    const visitors = (bgs[i].tour ?? 0) * VISITOR_TRIPS_PER_TOURISM_JOB;
+    if (visitors <= 0) continue;
+    let denom = 0;
+    const row = i * n;
+    for (let j = 0; j < n; j++) {
+      if (j === i) continue;
+      const d = distKm ? distKm[row + j] : fastKm(bgs[i].centroid, bgs[j].centroid);
+      if (d > 30) continue;
+      // the next sight, or the way out of town
+      const pull =
+        (bgs[j].tour ?? 0) +
+        ((bgs[j].air ?? 0) + (bgs[j].rail ?? 0)) * DEPARTURE_PULL;
+      if (pull <= 0) continue;
+      const w = pull * Math.exp(-d / beta);
+      TT[row + j] = w;
+      denom += w;
+    }
+    if (denom <= 0) continue;
+    const scale = visitors / denom;
+    for (let j = 0; j < n; j++) TT[row + j] *= scale;
+  }
 }
 
 function buildGravity(): void {
@@ -134,6 +188,7 @@ self.onmessage = (ev: MessageEvent<InitMsg | NetworkMsg>) => {
       ? Math.cos((bgs[0].centroid[1] * Math.PI) / 180)
       : 1;
     buildGravity();
+    buildTourism();
     (self as unknown as Worker).postMessage({ type: 'ready' });
     return;
   }
@@ -412,6 +467,8 @@ function computeNetwork(msg: NetworkMsg) {
   // main OD sweep: bus assignment for served pairs, plus a full travel-mode
   // split (bus / car / walk / bike) per origin block group for the map view
   const boardings = new Float64Array(lineCalc.length);
+  /** visitor boardings, kept apart because they ride at different hours */
+  const tourBoardings = new Float64Array(lineCalc.length);
   const bgModes = Array.from({ length: n }, () => ({ bus: 0, car: 0, walk: 0, bike: 0 }));
   let totalRiders = 0;
   let weightedWait = 0;
@@ -463,6 +520,37 @@ function computeNetwork(msg: NetworkMsg) {
     }
   }
 
+  // Visitors, on their own loop between the sights. Same mode choice — a
+  // tourist weighs a bus against a taxi much as anyone does — but the trips
+  // come from the visitor matrix, and they ride at visitor hours.
+  if (TT && distKm) {
+    for (let i = 0; i < n; i++) {
+      if (!near[i].length) continue;
+      const row = i * n;
+      for (let j = 0; j < n; j++) {
+        const flow = TT[row + j];
+        if (flow < 0.5 || i === j) continue;
+        const bt = bestTransit(i, j);
+        if (!bt || bt.min > 75) continue;
+        const dKm = distKm[row + j];
+        const carMin = (dKm / calib.carSpeedKmh) * 60 * 1.3 + CAR_PARK_PENALTY_MIN;
+        const walkOnlyMin = dKm * WALK_MIN_PER_KM;
+        // a visitor on foot in a compact centre is the norm, not the exception
+        let walkFactor = 1;
+        if (walkOnlyMin < bt.min * 0.75) walkFactor = 0.12;
+        else if (walkOnlyMin < bt.min) walkFactor = 0.4;
+        const auto = 0.92 / (1 + Math.exp((bt.min - carMin) / MODE_TAU));
+        const share = Math.min(0.9, (CAPTIVE_SHARE + (1 - CAPTIVE_SHARE) * auto) * walkFactor);
+        if (share < 0.01) continue;
+        const riders = flow * share;
+        totalRiders += riders;
+        weightedWait += riders * Math.min(lineCalc[bt.l1].headwayForWait / 2, MAX_WAIT_MIN);
+        tourBoardings[bt.l1] += riders;
+        if (bt.l2 >= 0) tourBoardings[bt.l2] += riders;
+      }
+    }
+  }
+
   // service-window scaling + per-line stats
   const perLine = lineCalc.map((lc, li) => {
     const { l } = lc;
@@ -470,14 +558,27 @@ function computeNetwork(msg: NetworkMsg) {
       (s, v) => s + v,
       0,
     );
-    let daily = boardings[li] * windowShare;
+    const tourWindowShare = TOURIST_PROFILE.slice(l.firstHour, l.lastHour).reduce(
+      (s, v) => s + v,
+      0,
+    );
+    const commuteDaily = boardings[li] * windowShare;
+    const tourDaily = tourBoardings[li] * tourWindowShare;
+    let daily = commuteDaily + tourDaily;
+    // how the day is shaped for this line: a commuter line peaks twice, a
+    // line through the tourist quarter fills out the middle of the day
+    const tourShare = daily > 0 ? tourDaily / daily : 0;
+    const profileAt = (h: number) =>
+      (1 - tourShare) * (HOURLY_PROFILE[h] / (windowShare || 1)) +
+      tourShare * (TOURIST_PROFILE[h] / (tourWindowShare || 1));
 
     // crowding: demand at the busiest hour vs capacity offered THAT hour
     let peakShare = 0.01;
     let peakHour = l.firstHour;
     for (let h = l.firstHour; h < l.lastHour; h++) {
-      if (HOURLY_PROFILE[h] > peakShare) {
-        peakShare = HOURLY_PROFILE[h];
+      const share = profileAt(h);
+      if (share > peakShare) {
+        peakShare = share;
         peakHour = h;
       }
     }
@@ -488,8 +589,8 @@ function computeNetwork(msg: NetworkMsg) {
     // crush-loaded buses shed riders hard — people won't board sardine cans
     if (loadFactor > 1) daily *= Math.pow(1 / loadFactor, 0.65);
 
-    const hourly = HOURLY_PROFILE.map((p, h) =>
-      h >= l.firstHour && h < l.lastHour ? (daily * p) / windowShare : 0,
+    const hourly = HOURLY_PROFILE.map((_p, h) =>
+      h >= l.firstHour && h < l.lastHour ? daily * profileAt(h) : 0,
     );
 
     // departures follow the time-of-day timetable; drivers clock in only
