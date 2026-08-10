@@ -1,4 +1,4 @@
-import { writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
@@ -103,6 +103,25 @@ function versionedBoot() {
         `${JSON.stringify({ build: BUILD_ID, assets })}\n`,
       );
       writeFileSync(join(options.dir ?? 'dist', 'sw.js'), serviceWorker(BUILD_ID, assets));
+
+      // A built page must never reference the dev entry. If this ever fires,
+      // the html transform did not see the final markup and the deploy would
+      // have shipped a page asking players' browsers for /src/main.tsx.
+      const html = readFileSync(join(options.dir ?? 'dist', 'index.html'), 'utf8');
+      // a *tag* pointing into /src/, not the recovery code that mentions the
+      // path in a string
+      const devTag = /<(?:script|link)[^>]+(?:src|href)="[^"]*\/src\//.test(html);
+      if (devTag || assets.js.includes('/src/')) {
+        throw new Error(
+          'build produced a page referencing the dev entry (/src/…) — refusing to ship it',
+        );
+      }
+      // An empty manifest is worse than none: the page would boot nothing and
+      // the worker would cache that. Only ever reachable if the html
+      // transform did not run, which is precisely when we must not ship.
+      if (!assets.js) {
+        throw new Error('no entry bundle recorded — version.json would be empty');
+      }
     },
   };
 }

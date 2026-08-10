@@ -41,6 +41,51 @@
           }
           return false; // two goes and still broken — show the error card
         };
+        // This page is the dev entry: the tag below points at /src/main.tsx,
+        // which only a Vite dev server can serve. A production build replaces
+        // it. If it 404s we are being served the raw source — a branch-based
+        // Pages setup, or a copy of it a browser kept — so boot the real
+        // bundle by asking version.json what this deploy actually named it,
+        // rather than white-screening on a file that was never deployed.
+        var bootedFromSource = false;
+        var bootFromSource = function () {
+          if (bootedFromSource) return true;
+          bootedFromSource = true;
+          try {
+            fetch(new URL('version.json', document.baseURI).href + '?t=' + Date.now(), {
+              cache: 'no-store'
+            })
+              .then(function (r) { return r.ok ? r.json() : null; })
+              .then(function (v) {
+                if (!v || !v.assets || !v.assets.js) throw new Error('no manifest');
+                (v.assets.css || []).forEach(function (href) {
+                  var l = document.createElement('link');
+                  l.rel = 'stylesheet';
+                  l.href = new URL(href, document.baseURI).href;
+                  document.head.appendChild(l);
+                });
+                var sc = document.createElement('script');
+                sc.type = 'module';
+                sc.src = new URL(v.assets.js, document.baseURI).href;
+                document.head.appendChild(sc);
+              })
+              .catch(function () {
+                // No manifest either, so this host is serving the repository
+                // source rather than the built site — no reload can fix that,
+                // and saying "stale cache" would send the reader the wrong way.
+                bootError =
+                  'This page is the project source, not the built game: it asks for ' +
+                  '/src/main.tsx, which only a local dev server has. GitHub Pages is ' +
+                  'publishing from the branch instead of the Actions build — set ' +
+                  'Settings \u2192 Pages \u2192 Source to "GitHub Actions".';
+                showBootCard();
+              });
+          } catch (err) {
+            reloadForStaleAssets();
+          }
+          return true;
+        };
+
         window.addEventListener(
           'error',
           function (e) {
@@ -48,6 +93,10 @@
             var failedAsset =
               (t && t.tagName === 'SCRIPT' && t.src) ||
               (t && t.tagName === 'LINK' && t.rel === 'stylesheet');
+            if (failedAsset && t.src && /\/src\//.test(t.src)) {
+              bootFromSource();
+              return;
+            }
             if (failedAsset && reloadForStaleAssets()) return;
             if (e.error) {
               bootError = String((e.error && e.error.stack) || e.message || e.error);
@@ -65,9 +114,10 @@
           }
           if (!bootError) bootError = 'Unhandled: ' + reason;
         });
-        setTimeout(function () {
+        var showBootCard = function () {
           var root = document.getElementById('root');
           if (!root || root.childElementCount > 0) return; // app is up
+          if (document.getElementById('il-reload')) return; // already up
           var splash = document.getElementById('boot-splash');
           if (splash) splash.remove();
           root.innerHTML =
@@ -158,7 +208,8 @@
               finish();
             }
           };
-        }, 4000);
+        };
+        setTimeout(showBootCard, 4000);
       })();
     </script>
   </head>
