@@ -49,6 +49,10 @@ jobs:
           node scripts/bake-city.mjs all || \
             echo "::warning::city bake failed — the site will fall back to in-browser downloads"
       - run: npm run build
+      # keep prior deploys' hashed assets alive so cached pages never point
+      # at deleted files right after an update
+      - name: Retain previous deploys' assets
+        run: node scripts/retain-assets.mjs || echo "::warning::asset retention skipped"
       - uses: actions/configure-pages@v5
         with:
           enablement: true

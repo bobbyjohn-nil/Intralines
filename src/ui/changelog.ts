@@ -32,6 +32,8 @@ export const CHANGELOG: LogEntry[] = [
       'If a reload still lands on a stale cached page, the game now forces a genuinely fresh copy from the server rather than reloading into the same broken state, and tidies the address bar afterwards.',
       'Your saves survive updates. Saves written by older versions load properly instead of quietly starting you over, and a save from a NEWER version is never overwritten by an older tab — the game tells you to reload and leaves it untouched. Anything unreadable is kept as a backup copy instead of being lost.',
       'City data left behind by an older version is now cleared out instead of sitting in browser storage forever, which is what used to fill up storage and make saving fail after a few updates. Checking which cities are downloaded is also much faster on the home screen.',
+      'The 3D buses driving the map got the same makeover as the logo: window bays with pillars instead of one long glass strip, a raked windshield, an amber destination blind over the nose, a grille, bumpers and wing mirrors — and the double-decker grew pillared windows on both floors plus upper-deck front glass.',
+      'Belt and braces for updates: the game files from the last several releases now stay hosted alongside the new ones, so even a page that dodges every other safeguard still finds the files it asks for.',
     ],
   },
   {

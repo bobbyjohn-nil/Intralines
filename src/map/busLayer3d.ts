@@ -881,6 +881,18 @@ export function makeBusMesh(
     }
   };
 
+  // buses aren't symmetric train cars: pillars chop the glass into window
+  // bays, and the front gets a raked windshield + destination blind
+  const addWindowPillars = (wy: number, bandLen: number) => {
+    const n = Math.max(2, Math.round(bandLen / 2.6));
+    for (let i = 1; i < n; i++) {
+      const px = -bandLen / 2 + (bandLen / n) * i;
+      const pillar = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.95, 2.65), bodyMat);
+      pillar.position.set(px, wy, 0);
+      g.add(pillar);
+    }
+  };
+
   if (modelId === 'doubledeck') {
     // two floors: tall body, two window bands, roof right at the top
     const body = new THREE.Mesh(new THREE.BoxGeometry(len, 3.6, 2.6), bodyMat);
@@ -893,12 +905,17 @@ export function makeBusMesh(
       const band = new THREE.Mesh(new THREE.BoxGeometry(len - 0.6, 0.85, 2.64), glassMat);
       band.position.y = wy;
       g.add(band);
+      addWindowPillars(wy, len - 0.6);
     }
     const roof = new THREE.Mesh(new THREE.BoxGeometry(len - 0.4, 0.18, 2.4), roofMat);
     roof.position.y = 4.2;
     g.add(roof);
     // lower deck only — the stairs eat the space a rear door would use
     addDoors([len / 2 - 3.9], 2.0, 1.6);
+    // upper-deck front glass so the top floor has a face too
+    const topGlass = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.95, 2.3), glassMat2);
+    topGlass.position.set(len / 2 + 0.01, 3.5, 0);
+    g.add(topGlass);
   } else if (modelId === 'minibus') {
     // Cutaway-van shuttle: a narrow van cab and hood up front, with the
     // passenger box built wide behind it. The overhang is the whole shape of
@@ -954,6 +971,7 @@ export function makeBusMesh(
     const windows = new THREE.Mesh(new THREE.BoxGeometry(len - 0.6, 0.9, 2.64), glassMat);
     windows.position.y = 2.35;
     g.add(windows);
+    addWindowPillars(2.35, len - 0.6);
 
     const roof = new THREE.Mesh(new THREE.BoxGeometry(len - 0.4, 0.18, 2.4), roofMat);
     roof.position.y = 2.95;
@@ -963,6 +981,14 @@ export function makeBusMesh(
     // panel the station viewer animates, so up close the door that opens is
     // the door that is painted on.
     addDoors([len / 2 - 3.9, -len / 2 + 2.5], 2.2, 1.72);
+
+    // wing mirrors up front
+    const mirrorMat = new THREE.MeshLambertMaterial({ color: 0x22242a });
+    for (const mz of [-1.45, 1.45]) {
+      const mirror = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.5, 0.22), mirrorMat);
+      mirror.position.set(len / 2 - 0.35, 2.5, mz);
+      g.add(mirror);
+    }
   }
 
   if (modelId === 'artic') {
@@ -992,9 +1018,34 @@ export function makeBusMesh(
   }
 
   if (modelId !== 'minibus') {
-    const windshield = new THREE.Mesh(new THREE.BoxGeometry(0.1, 1.3, 2.3), glassMat2);
-    windshield.position.set(len / 2 + 0.01, 1.9, 0);
+    // raked windshield: leaned back and slightly proud of the flat face,
+    // so the nose stops reading as the end of a train car
+    const windshield = new THREE.Mesh(new THREE.BoxGeometry(0.1, 1.5, 2.3), glassMat2);
+    windshield.position.set(len / 2 + 0.16, 1.95, 0);
+    windshield.rotation.z = 0.2;
     g.add(windshield);
+
+    // destination blind over the windshield — the tell-tale bus feature
+    const blind = new THREE.Mesh(
+      new THREE.BoxGeometry(0.14, 0.34, 1.7),
+      new THREE.MeshLambertMaterial({
+        color: 0x171a1e, emissive: 0xd9a33c, emissiveIntensity: 0.55,
+      }),
+    );
+    blind.position.set(len / 2 + 0.04, 2.72, 0);
+    g.add(blind);
+
+    // front fascia with a dark grille + rear bumper
+    const trimMat = new THREE.MeshLambertMaterial({ color: 0x2a2d33 });
+    const fascia = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.5, 2.5), bodyMat);
+    fascia.position.set(len / 2 + 0.08, 0.85, 0);
+    g.add(fascia);
+    const grille = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.26, 1.6), trimMat);
+    grille.position.set(len / 2 + 0.23, 0.78, 0);
+    g.add(grille);
+    const bumper = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.34, 2.55), trimMat);
+    bumper.position.set(-len / 2 - 0.06, 0.62, 0);
+    g.add(bumper);
   }
 
   const headMat = new THREE.MeshLambertMaterial({
