@@ -6,6 +6,9 @@ import type { BusModelSpec } from './types';
 // ($95k), stops for a medium line (~10 x $4k) and a small wage buffer —
 // build one solid starter line, then earn the rest (or take the loan).
 export const START_CASH = 310_000;
+// Sandbox mode: the treasury is bottomless. Cash is pinned here every tick
+// so purchases never bite; the UI shows ∞ instead of the number.
+export const SANDBOX_CASH = 999_999_999;
 // The only lender left in town is Talon & Grasp Savings — and they know it.
 // A fat arrangement fee off the top, brutal interest forever, and the only
 // exit is buying your way out at a premium.

@@ -15,6 +15,19 @@ export interface LogEntry {
 
 export const CHANGELOG: LogEntry[] = [
   {
+    version: '1.17',
+    date: 'Aug 10, 2026',
+    title: 'Sandbox keys to the city',
+    items: [
+      'Sandbox mode: tick the box when founding a company and the treasury reads ∞ forever — buy anything, run everything, and the bills never bite. Report cards still arrive, so the government still has opinions. Sandbox saves are marked in the save list.',
+      'Entering a city now starts the game paused, so you can look around and plan before the clock (and the wages) start running. Press ▶ or Space when ready.',
+      'Interchanges and Transfer Hubs are now real buildings in the station view: a terminal hall with a glass front, columns, a lit name board — and marked bays that buses actually swing into, load, and pull out of. Other lines calling there idle in the side bays, and the Transfer Hub gets a clock tower.',
+      'Buses now always face the way they are driving — return-leg buses used to drive tail-first down the wrong side of the road. Station-view bus visits also run at their intended pace again instead of flashing past.',
+      'All confirmations are the game’s own dialogs now — no more gray browser popups for deleting lines, saves, or resetting data. Esc cancels, Enter confirms.',
+      'The line editor grew a ‹ back button to return to the full line list, Harbor Mutual’s window turned a trustworthy blue, and the runaway skyscraper in Des Moines has been brought back down to earth (building heights are now clamped to plausible).',
+    ],
+  },
+  {
     version: '1.16',
     date: 'Aug 10, 2026',
     title: 'When things go wrong, you’ll know',

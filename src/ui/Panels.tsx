@@ -18,6 +18,7 @@ import { fmtInt, fmtMoney } from './format';
 import type { CityPack, FleetEntry, LineStats, LngLat } from '../game/types';
 import { fastDistM } from '../game/geo';
 import { StationScene } from './StationScene';
+import { askConfirm } from './Confirm';
 
 /** residents within a short walk of any of these points (centroid approx) */
 export function reachPop(pack: CityPack | null, pts: LngLat[]): number {
@@ -183,10 +184,15 @@ function MapOptionsPanel() {
   );
 }
 
-function PanelTitle({ title }: { title: string }) {
+function PanelTitle({ title, onBack }: { title: string; onBack?: () => void }) {
   const setPanel = useGame((s) => s.setPanel);
   return (
     <div className="panel-title">
+      {onBack && (
+        <button className="icon-btn back" onClick={onBack} title="Back">
+          ‹
+        </button>
+      )}
       <h2>{title}</h2>
       <button className="icon-btn" onClick={() => setPanel('none')} title="Close">
         <IconClose size={16} />
@@ -272,7 +278,7 @@ function LineEditPanel() {
   if (!line) {
     return (
       <>
-        <PanelTitle title="Line" />
+        <PanelTitle title="Line" onBack={() => setPanel('lines')} />
         <p className="hint">Select a line on the map or in the Lines panel.</p>
       </>
     );
@@ -285,9 +291,14 @@ function LineEditPanel() {
   const cycleShown = st ? st.cycleMin : preview.cycleMin;
   const refuels = st?.refuelsPerDay ?? 0;
 
+  const backToLines = () => {
+    useGame.getState().selectLine(null);
+    setPanel('lines');
+  };
+
   return (
     <>
-      <PanelTitle title={line.name} />
+      <PanelTitle title={line.name} onBack={backToLines} />
       <div className="field-row">
         <input
           className="text-input"
@@ -499,8 +510,14 @@ function LineEditPanel() {
       <div className="btn-row">
         <button
           className="btn danger"
-          onClick={() => {
-            if (confirm(`Delete ${line.name}?`)) deleteLine(line.id);
+          onClick={async () => {
+            const ok = await askConfirm({
+              title: 'Delete line?',
+              message: `Delete ${line.name}? Its buses return to the depot and its stops stay on the map.`,
+              confirmLabel: 'Delete line',
+              danger: true,
+            });
+            if (ok) deleteLine(line.id);
           }}
         >
           Delete line

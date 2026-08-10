@@ -37,7 +37,37 @@ function makePerson(i: number): THREE.Group {
   return g;
 }
 
-/** stop furniture by tier: pole sign → glass shelter → canopied station */
+/** hub terminals get real signage: text painted onto a canvas texture */
+function makeTextSign(text: string, w: number, h: number): THREE.Mesh {
+  const c = document.createElement('canvas');
+  c.width = 512;
+  c.height = 80;
+  const ctx = c.getContext('2d')!;
+  ctx.fillStyle = '#1d3f7a';
+  ctx.fillRect(0, 0, 512, 80);
+  ctx.strokeStyle = '#ffe9a8';
+  ctx.lineWidth = 4;
+  ctx.strokeRect(6, 6, 500, 68);
+  ctx.fillStyle = '#ffe9a8';
+  ctx.font = 'bold 44px system-ui, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, 256, 43);
+  const tex = new THREE.CanvasTexture(c);
+  return new THREE.Mesh(
+    new THREE.PlaneGeometry(w, h),
+    new THREE.MeshBasicMaterial({ map: tex }),
+  );
+}
+
+/** where the buses stand at a hub: bay center x-offsets */
+export function hubBays(tier: number): number[] {
+  if (tier >= 5) return [0, -11, 11];
+  if (tier >= 4) return [0, -10];
+  return [0];
+}
+
+/** stop furniture by tier: pole → shelter → station → bus terminal */
 function makeFurniture(tier: number): THREE.Group {
   const g = new THREE.Group();
   const steel = new THREE.MeshLambertMaterial({ color: 0x4a4d55 });
@@ -73,20 +103,6 @@ function makeFurniture(tier: number): THREE.Group {
     bench.position.set(0, 0.55, -2.5);
     g.add(bench);
   }
-  if (tier >= 4) {
-    // interchange / hub: a tall pylon sign marks the place from blocks away
-    const pylon = new THREE.Mesh(new THREE.BoxGeometry(0.22, 5.2, 0.22), steel);
-    pylon.position.set(4.6, 2.6, -2.9);
-    g.add(pylon);
-    const topSign = new THREE.Mesh(
-      new THREE.BoxGeometry(1.5, 0.9, 0.16),
-      new THREE.MeshLambertMaterial({
-        color: 0x2b4c8c, emissive: 0x1a3a6e, emissiveIntensity: 0.4,
-      }),
-    );
-    topSign.position.set(4.6, 5.0, -2.9);
-    g.add(topSign);
-  }
   if (tier >= 3) {
     // proper station: longer canopy, second bay, reader board
     const canopy = new THREE.Mesh(
@@ -109,6 +125,100 @@ function makeFurniture(tier: number): THREE.Group {
     board.position.set(-3.2, 2.1, -2.6);
     g.add(board);
   }
+  if (tier >= 4) {
+    // interchange / transfer hub: a real terminal building with marked
+    // pull-in bays the buses swing into
+    const hub = tier >= 5;
+    const bays = hubBays(tier);
+
+    // apron: lighter concrete the bays are painted onto
+    const apron = new THREE.Mesh(
+      new THREE.BoxGeometry(hub ? 36 : 25, 0.03, 3.6),
+      new THREE.MeshLambertMaterial({ color: 0x7e838d }),
+    );
+    apron.position.set(0, 0.015, 1.9);
+    g.add(apron);
+    const paint = new THREE.MeshLambertMaterial({ color: 0xf2ecd8 });
+    for (const bx of bays) {
+      for (const ex of [-5.1, 5.1]) {
+        const edge = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.02, 3.0), paint);
+        edge.position.set(bx + ex, 0.035, 1.9);
+        g.add(edge);
+      }
+      const outer = new THREE.Mesh(new THREE.BoxGeometry(10.2, 0.02, 0.16), paint);
+      outer.position.set(bx, 0.035, 3.4);
+      g.add(outer);
+    }
+
+    // terminal hall along the back of the platform
+    const len = hub ? 21 : 14;
+    const hall = new THREE.Mesh(
+      new THREE.BoxGeometry(len, 3.2, 2.8),
+      new THREE.MeshLambertMaterial({ color: 0xd8cfba }),
+    );
+    hall.position.set(0, 1.62, -4.6);
+    g.add(hall);
+    const front = new THREE.Mesh(
+      new THREE.BoxGeometry(len - 1.2, 1.9, 0.08),
+      new THREE.MeshLambertMaterial({
+        color: 0x9fc2d4, transparent: true, opacity: 0.6,
+      }),
+    );
+    front.position.set(0, 1.15, -3.14);
+    g.add(front);
+    const hallRoof = new THREE.Mesh(
+      new THREE.BoxGeometry(len + 2, 0.22, 3.8),
+      new THREE.MeshLambertMaterial({ color: 0x37403f }),
+    );
+    hallRoof.position.set(0, 3.32, -4.6);
+    g.add(hallRoof);
+    for (let cx = -len / 2 + 1.2; cx <= len / 2 - 1.1; cx += 3.4) {
+      const col = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 3.2, 8), steel);
+      col.position.set(cx, 1.6, -3.1);
+      g.add(col);
+    }
+    const nameSign = makeTextSign(hub ? 'TRANSFER HUB' : 'INTERCHANGE', 6.6, 1.0);
+    nameSign.position.set(0, 2.72, -3.05);
+    g.add(nameSign);
+
+    // the tall pylon moves out past the building's end
+    const pylon = new THREE.Mesh(new THREE.BoxGeometry(0.22, 5.2, 0.22), steel);
+    pylon.position.set(len / 2 + 1.8, 2.6, -2.9);
+    g.add(pylon);
+    const topSign = new THREE.Mesh(
+      new THREE.BoxGeometry(1.5, 0.9, 0.16),
+      new THREE.MeshLambertMaterial({
+        color: 0x2b4c8c, emissive: 0x1a3a6e, emissiveIntensity: 0.4,
+      }),
+    );
+    topSign.position.set(len / 2 + 1.8, 5.0, -2.9);
+    g.add(topSign);
+
+    if (hub) {
+      // transfer hub crown: a little clock tower over the entrance
+      const tower = new THREE.Mesh(
+        new THREE.BoxGeometry(1.4, 3.4, 1.4),
+        new THREE.MeshLambertMaterial({ color: 0xcabfa8 }),
+      );
+      tower.position.set(0, 5.1, -4.6);
+      g.add(tower);
+      const face = new THREE.Mesh(
+        new THREE.CircleGeometry(0.5, 20),
+        new THREE.MeshLambertMaterial({
+          color: 0xfffbe8, emissive: 0x777158, emissiveIntensity: 0.35,
+        }),
+      );
+      face.position.set(0, 5.6, -3.88);
+      g.add(face);
+      const towerRoof = new THREE.Mesh(
+        new THREE.ConeGeometry(1.15, 0.9, 4),
+        new THREE.MeshLambertMaterial({ color: 0x37403f }),
+      );
+      towerRoof.rotation.y = Math.PI / 4;
+      towerRoof.position.set(0, 7.25, -4.6);
+      g.add(towerRoof);
+    }
+  }
   return g;
 }
 
@@ -130,8 +240,14 @@ export function StationScene({ stopId, tier }: { stopId: string; tier: number })
     scene.background = new THREE.Color(0xdfe9ee);
     scene.fog = new THREE.Fog(0xdfe9ee, 30, 60);
     const cam = new THREE.PerspectiveCamera(42, W / H, 0.1, 120);
-    cam.position.set(-7.5, 5.4, 11.5);
-    cam.lookAt(0, 1, -0.5);
+    if (tier >= 4) {
+      // hubs are whole buildings: pull back to frame the terminal + bays
+      cam.position.set(-10, 6.8, 15.5);
+      cam.lookAt(0, 1.2, -1);
+    } else {
+      cam.position.set(-7.5, 5.4, 11.5);
+      cam.lookAt(0, 1, -0.5);
+    }
 
     scene.add(new THREE.AmbientLight(0xffffff, 1.9));
     const sun = new THREE.DirectionalLight(0xfff2d9, 1.6);
@@ -159,6 +275,24 @@ export function StationScene({ stopId, tier }: { stopId: string; tier: number })
     }
 
     scene.add(makeFurniture(tier));
+    // test/debug hook, same spirit as window.__busLayer
+    (window as unknown as { __stationScene?: THREE.Scene }).__stationScene = scene;
+
+    // at a hub, other lines calling here idle in the side bays
+    if (tier >= 4) {
+      const st = useGame.getState();
+      const calling = st.lines.filter((l) => l.stopIds.includes(stopId));
+      const sideBays = hubBays(tier).slice(1);
+      calling.slice(1, 1 + sideBays.length).forEach((l, i) => {
+        const parked = makeBusMesh(l.color, lineRefModel(l), st.companyColor);
+        parked.traverse((o) => {
+          const mat = (o as THREE.Mesh).material as THREE.MeshLambertMaterial | undefined;
+          if (mat && 'emissiveIntensity' in mat) mat.emissiveIntensity = 0.12;
+        });
+        parked.position.set(sideBays[i], 0.1, 0.9);
+        scene.add(parked);
+      });
+    }
 
     // waiting crowd — grows and shrinks with the live estimate
     const people: THREE.Group[] = [];
@@ -213,7 +347,7 @@ export function StationScene({ stopId, tier }: { stopId: string; tier: number })
         const mat = (o as THREE.Mesh).material as THREE.MeshLambertMaterial | undefined;
         if (mat && 'emissiveIntensity' in mat) mat.emissiveIntensity = 0.12;
       });
-      mesh.position.set(-26, 0.1, 2.2);
+      mesh.position.set(-26, 0.1, tier >= 4 ? 2.6 : 2.2);
       mesh.rotation.y = 0; // +x facing
       // curb-side door: a dark panel that slides open
       const door = new THREE.Mesh(
@@ -245,12 +379,24 @@ export function StationScene({ stopId, tier }: { stopId: string; tier: number })
         return;
       }
       const ease = (v: number) => 1 - Math.pow(1 - v, 3);
+      const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
+      // hubs: swing off the through lane into the marked bay by the curb
+      const isHub = tier >= 4;
+      const roadZ = isHub ? 2.6 : 2.2;
+      const bayZ = isHub ? 0.9 : 2.2;
+      const walkSpan = isHub ? 0.85 : 1.6;
+      const hideAt = isHub ? -0.25 : 0.55;
       if (t < 0.26) {
-        // pull in
+        // pull in — the last stretch curves into the bay, nose toward curb
         mesh.position.x = -26 + ease(t / 0.26) * 26;
+        const swing = ease(clamp01((t - 0.13) / 0.13));
+        mesh.position.z = roadZ - swing * (roadZ - bayZ);
+        mesh.rotation.y = isHub ? 0.14 * Math.sin(Math.PI * swing) : 0;
       } else if (t < 0.36) {
         // doors open
         mesh.position.x = 0;
+        mesh.position.z = bayZ;
+        mesh.rotation.y = 0;
         door.position.z = -1.36 + ease((t - 0.26) / 0.1) * 0.9;
       } else if (t < 0.64) {
         // exchange: the queue shuffles aboard
@@ -258,24 +404,32 @@ export function StationScene({ stopId, tier }: { stopId: string; tier: number })
         people.forEach((p, i) => {
           if (i < 6) {
             const [sx] = [p.position.x];
-            p.position.z = -0.9 + Math.min(1, Math.max(0, k * 2 - i * 0.15)) * 1.6;
-            p.position.x = sx + (1.6 - sx) * Math.min(1, Math.max(0, k * 2 - i * 0.15)) * 0.4;
-            p.visible = p.position.z < 0.55;
+            p.position.z = -0.9 + clamp01(k * 2 - i * 0.15) * walkSpan;
+            p.position.x = sx + (1.6 - sx) * clamp01(k * 2 - i * 0.15) * 0.4;
+            p.visible = p.position.z < hideAt;
           }
         });
       } else if (t < 0.74) {
         // doors close
         door.position.z = -0.46 - ease((t - 0.64) / 0.1) * 0.9;
       } else {
-        // pull away
-        mesh.position.x = ease((t - 0.74) / 0.26) * 27;
+        // pull away — swing back out to the through lane
+        const k = (t - 0.74) / 0.26;
+        mesh.position.x = ease(k) * 27;
+        const swing = ease(clamp01(k / 0.5));
+        mesh.position.z = bayZ + swing * (roadZ - bayZ);
+        mesh.rotation.y = isHub ? -0.14 * Math.sin(Math.PI * swing) : 0;
       }
     };
 
     let raf = 0;
     let lastPoll = 0;
+    let prevFrame = 0;
     const loop = (now: number) => {
       raf = requestAnimationFrame(loop);
+      // per-frame delta for the visit clock (clamped across tab-sleeps)
+      const dtMs = prevFrame ? Math.min(now - prevFrame, 100) : 16;
+      prevFrame = now;
       if (now - lastPoll > 400) {
         lastPoll = now;
         const layer = (window as unknown as { __busLayer?: { stationInfo?: (id: string) => { waiting: number; lastServedMin: number | null; lineId: string | null } } }).__busLayer;
@@ -300,7 +454,7 @@ export function StationScene({ stopId, tier }: { stopId: string; tier: number })
       people.forEach((p, i) => {
         p.rotation.z = sway * (i % 2 === 0 ? 1 : -1);
       });
-      stepVisit(now);
+      stepVisit(dtMs);
       renderer.render(scene, cam);
     };
     raf = requestAnimationFrame(loop);

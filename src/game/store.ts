@@ -4,7 +4,7 @@ import type {
   SaveGame, Staff, Stop, Tool,
 } from './types';
 import {
-  BUS_MODELS, DEPOT_CAPACITY, DEPOT_UPGRADE_COST, DEPOT_UPKEEP_PER_DAY,
+  BUS_MODELS, DEPOT_CAPACITY, DEPOT_UPGRADE_COST, DEPOT_UPKEEP_PER_DAY, SANDBOX_CASH,
   BUSES_PER_MECHANIC, CHARGERS_COST, FLEET_TIER_CAP, FLEET_TIER_COST, FLEET_TIER_NAMES,
   FLEET_UPGRADE_COST_SHARE, GOOD_LOAN_DAILY_RATE, GOOD_LOAN_MAX, GOOD_LOAN_MIN_SCORE,
   HEADWAY_CHOICES, LINE_COLORS, LOAN_AMOUNT, MAX_DEPOTS,
@@ -58,6 +58,7 @@ export interface GameState {
   clockRef: ClockRef;
   speedIdx: number;
   paused: boolean;
+  sandbox: boolean;
 
   stops: Stop[];
   lines: BusLine[];
@@ -133,7 +134,7 @@ export interface GameState {
   refurbishFleet: (modelId: string) => void;
   upgradeFleetModel: (modelId: string) => void;
   setAutoHireDriver: (v: boolean) => void;
-  foundCompany: (name: string, color: string) => void;
+  foundCompany: (name: string, color: string, sandbox?: boolean) => void;
   hire: (role: keyof Staff) => void;
   fire: (role: keyof Staff) => void;
   buildDepot: (pt: LngLat) => void;
@@ -627,6 +628,7 @@ export const useGame = create<GameState>((set, get) => {
     clockRef: { min: 6 * 60, realMs: 0, rate: 0 },
     speedIdx: 0,
     paused: false,
+    sandbox: false,
 
     stops: [],
     lines: [],
@@ -744,6 +746,7 @@ export const useGame = create<GameState>((set, get) => {
               reports: sv.reports ?? [],
               companyName: sv.companyName ?? '',
               companyColor: sv.companyColor ?? LINE_COLORS[0],
+              sandbox: sv.sandbox ?? false,
             };
             lineSeq = sv.lines.length + 1;
             stopSeq = sv.stops.length + 1;
@@ -763,7 +766,9 @@ export const useGame = create<GameState>((set, get) => {
         cash: START_CASH,
         clockMin: 6 * 60,
         speedIdx: 0,
-        paused: false,
+        // entering a city always starts paused: look around first, then hit ▶
+        paused: true,
+        sandbox: false,
         stops: [],
         lines: [],
         depots: [],
@@ -786,7 +791,10 @@ export const useGame = create<GameState>((set, get) => {
         ...base,
       });
       const st = get();
-      set({ clockRef: { min: st.clockMin, realMs: performance.now(), rate: SPEEDS[0].gameMinPerSec } });
+      set({ clockRef: { min: st.clockMin, realMs: performance.now(), rate: 0 } });
+      if (st.companyName) {
+        get().notify('Game paused — press ▶ (or Space) when you’re ready.', 'info');
+      }
       scheduleRecompute();
     },
 
@@ -873,7 +881,8 @@ export const useGame = create<GameState>((set, get) => {
       set({
         clockMin: newClock,
         clockRef: { min: newClock, realMs: performance.now(), rate },
-        cash: s.cash + dCash,
+        // sandbox: the treasury never moves, whatever was earned or spent
+        cash: s.sandbox ? SANDBOX_CASH : s.cash + dCash,
         totalRidersServed: newTotal,
         fleet,
       });
@@ -1451,10 +1460,23 @@ export const useGame = create<GameState>((set, get) => {
       set({ autoHireDriver: v });
     },
 
-    foundCompany: (name, color) => {
+    foundCompany: (name, color, sandbox = false) => {
       const clean = name.trim().slice(0, 32) || 'Intralines Transit';
-      set({ companyName: clean, companyColor: color });
-      get().notify(`${clean} is open for business! Place your first depot.`, 'good');
+      set({
+        companyName: clean,
+        companyColor: color,
+        sandbox,
+        ...(sandbox ? { cash: SANDBOX_CASH } : {}),
+      });
+      get().notify(
+        sandbox
+          ? `${clean} is open for business — sandbox funding approved, spend freely!`
+          : `${clean} is open for business! Place your first depot.`,
+        'good',
+      );
+      if (get().paused) {
+        get().notify('Game paused — press ▶ (or Space) when you’re ready.', 'info');
+      }
       get().saveGame();
     },
 
@@ -1760,6 +1782,7 @@ export const useGame = create<GameState>((set, get) => {
         reports: s.reports,
         companyName: s.companyName,
         companyColor: s.companyColor,
+        sandbox: s.sandbox,
         savedAt: Date.now(),
       };
       try {

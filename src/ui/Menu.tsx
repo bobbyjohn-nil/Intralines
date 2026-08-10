@@ -4,6 +4,7 @@ import { loadCity } from '../game/data/loadCity';
 import { idbClearAllPacks, idbDeletePack, idbGetPack } from '../game/data/idb';
 import { SAVE_KEY_PREFIX } from '../game/constants';
 import { reportError } from '../game/errors';
+import { askConfirm } from './Confirm';
 import { useGame } from '../game/store';
 import type { CityMeta, SaveGame } from '../game/types';
 import { BusSide, IconUpload } from './icons';
@@ -227,8 +228,14 @@ function PlayTab({
               {hasSave && (
                 <button
                   className="btn"
-                  onClick={() => {
-                    if (confirm(`Start over in ${c.name}? Your save will be deleted.`)) {
+                  onClick={async () => {
+                    const ok = await askConfirm({
+                      title: 'Start over?',
+                      message: `Start a fresh game in ${c.name}? Your current save there will be deleted.`,
+                      confirmLabel: 'Start over',
+                      danger: true,
+                    });
+                    if (ok) {
                       localStorage.removeItem(SAVE_KEY_PREFIX + c.id);
                       start(c);
                     }
@@ -274,8 +281,8 @@ function SavesTab({
             <b>{meta.name}</b>
             <small>
               {sv.companyName ? `${sv.companyName} · ` : ''}
-              {gameClock(sv.clockMin)} · {money(sv.cash)} · {sv.lines.length}{' '}
-              {sv.lines.length === 1 ? 'line' : 'lines'} ·{' '}
+              {gameClock(sv.clockMin)} · {sv.sandbox ? '∞ sandbox' : money(sv.cash)} ·{' '}
+              {sv.lines.length} {sv.lines.length === 1 ? 'line' : 'lines'} ·{' '}
               {sv.fleet.reduce((s, f) => s + f.count, 0)} buses
             </small>
             <small className="dim">
@@ -301,8 +308,14 @@ function SavesTab({
             </button>
             <button
               className="btn danger"
-              onClick={() => {
-                if (confirm(`Delete your ${meta.name} save? This cannot be undone.`)) {
+              onClick={async () => {
+                const ok = await askConfirm({
+                  title: 'Delete save?',
+                  message: `Delete your ${meta.name} save? This cannot be undone.`,
+                  confirmLabel: 'Delete',
+                  danger: true,
+                });
+                if (ok) {
                   localStorage.removeItem(SAVE_KEY_PREFIX + meta.id);
                   refresh();
                 }
@@ -417,9 +430,14 @@ function SettingsTab({
           <button
             className="btn danger"
             onClick={async () => {
-              if (!confirm('Delete ALL saves and cached city data? This cannot be undone.')) {
-                return;
-              }
+              const ok = await askConfirm({
+                title: 'Reset everything?',
+                message:
+                  'Delete ALL saves and cached city data in this browser? This cannot be undone.',
+                confirmLabel: 'Delete everything',
+                danger: true,
+              });
+              if (!ok) return;
               for (const c of CITIES) {
                 localStorage.removeItem(SAVE_KEY_PREFIX + c.id);
               }

@@ -264,6 +264,8 @@ export interface SaveGame {
   /** player company identity (absent in old saves) */
   companyName?: string;
   companyColor?: string;
+  /** sandbox game: infinite money (absent in old saves) */
+  sandbox?: boolean;
   /** wall-clock ms when the save was written (absent in old saves) */
   savedAt?: number;
 }

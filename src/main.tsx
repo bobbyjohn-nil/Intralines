@@ -1,6 +1,7 @@
 import { createRoot } from 'react-dom/client';
 import App from './App';
 import { ErrorBoundary, ErrorCenter } from './ui/ErrorCenter';
+import { ConfirmHost } from './ui/Confirm';
 import { installGlobalErrorHandlers } from './game/errors';
 import { migrateLocalStorage } from './game/migrate';
 import './styles.css';
@@ -20,6 +21,7 @@ createRoot(document.getElementById('root')!).render(
   <ErrorBoundary>
     <App />
     <ErrorCenter />
+    <ConfirmHost />
   </ErrorBoundary>,
 );
 

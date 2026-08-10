@@ -11,6 +11,7 @@ export function TopBar() {
   const clockMin = useGame((s) => s.clockMin);
   const speedIdx = useGame((s) => s.speedIdx);
   const paused = useGame((s) => s.paused);
+  const sandbox = useGame((s) => s.sandbox);
   const stats = useGame((s) => s.stats);
   const riders = useGame((s) => s.totalRidersServed);
   const setSpeed = useGame((s) => s.setSpeed);
@@ -73,9 +74,12 @@ export function TopBar() {
         ))}
       </div>
       <div className="spacer" />
-      <div className={`chip stat ${cash < 0 ? 'bad' : ''}`} title="Company cash">
+      <div
+        className={`chip stat ${cash < 0 ? 'bad' : ''}`}
+        title={sandbox ? 'Sandbox — unlimited funds' : 'Company cash'}
+      >
         <IconCash size={15} />
-        {fmtMoney(cash)}
+        {sandbox ? '∞' : fmtMoney(cash)}
       </div>
       <div className="chip stat" title="Total riders served">
         <IconRider size={15} />

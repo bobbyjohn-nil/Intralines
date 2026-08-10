@@ -268,12 +268,16 @@ export function buildRealStyle(): StyleSpecification {
         minzoom: 13,
         paint: {
           'fill-extrusion-color': PALETTE.building3d,
+          // clamp: one mis-tagged OSM building (hi, Des Moines) shouldn't
+          // punch a kilometer-tall spike through the sky
           'fill-extrusion-height': [
             'interpolate', ['linear'], ['zoom'],
             13, 0,
-            14.2, ['coalesce', ['get', 'render_height'], 6],
+            14.2, ['min', ['coalesce', ['get', 'render_height'], 6], 210],
           ],
-          'fill-extrusion-base': ['coalesce', ['get', 'render_min_height'], 0],
+          'fill-extrusion-base': [
+            'min', ['coalesce', ['get', 'render_min_height'], 0], 200,
+          ],
           'fill-extrusion-opacity': 0.86,
         },
       },
@@ -530,7 +534,7 @@ export function buildPackStyle(pack: CityPack): StyleSpecification {
             24, PALETTE.building3d,
             70, '#d3cbc0',
           ],
-          'fill-extrusion-height': ['get', 'h'],
+          'fill-extrusion-height': ['min', ['get', 'h'], 120],
           'fill-extrusion-opacity': 0.9,
         },
       },

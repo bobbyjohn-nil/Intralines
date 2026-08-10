@@ -13,9 +13,11 @@ export function Founding() {
   const backToMenu = useGame((s) => s.backToMenu);
   const [name, setName] = useState('');
   const [color, setColor] = useState(LINE_COLORS[0]);
+  const [sandbox, setSandbox] = useState(false);
 
   const city = pack?.meta.name ?? 'the city';
-  const submit = () => foundCompany(name.trim() || `${city} Transit Co.`, color);
+  const submit = () =>
+    foundCompany(name.trim() || `${city} Transit Co.`, color, sandbox);
 
   return (
     <div className="founding">
@@ -56,6 +58,17 @@ export function Founding() {
             />
           ))}
         </div>
+        <label className="founding-sandbox">
+          <input
+            type="checkbox"
+            checked={sandbox}
+            onChange={(e) => setSandbox(e.target.checked)}
+          />
+          <span>
+            <b>Sandbox mode</b> — infinite money. Build whatever you like;
+            the report cards still come, but the bills never hurt.
+          </span>
+        </label>
         <div className="btn-row founding-actions">
           <button className="btn" onClick={backToMenu}>
             Back

@@ -635,8 +635,11 @@ export class BusLayer3D implements CustomLayerInterface {
             const tProfile = since - cycleStart;
             const pos = this.distAt(a, tProfile, cycleIdx, k, cong);
             if (pos) {
+              // bearingAlong already looks BEHIND when !forward, so its
+              // bearing is the direction of travel on both legs — adding
+              // 180 here had return-leg buses driving tail-first
               const { pt, bearing } = this.smoothBearing(line, pos.d, pos.forward);
-              hit = { pt, bearing: pos.forward ? bearing : bearing + 180, lineD: pos.d };
+              hit = { pt, bearing, lineD: pos.d };
             }
           } else if (dp && cycleStart > lastDepartureCutoff) {
             // service over: one last drive home to the depot (only for
@@ -650,7 +653,7 @@ export class BusLayer3D implements CustomLayerInterface {
               const { pt, bearing } = this.bearingAlong(
                 dp.path, dp.cum, dp.lenM, dp.lenM - d, false,
               );
-              hit = { pt, bearing: bearing + 180, lineD: null };
+              hit = { pt, bearing, lineD: null };
             }
           }
         }
