@@ -26,7 +26,8 @@ export function BusWipe() {
       return;
     }
     setState('run');
-    const t = setTimeout(() => setState('done'), 1150);
+    // just past the 2.4s of animation in styles.css (engine, then pull-away)
+    const t = setTimeout(() => setState('done'), 2550);
     return () => clearTimeout(t);
   }, []);
 
