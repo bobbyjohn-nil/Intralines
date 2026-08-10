@@ -14,8 +14,8 @@ import { fileURLToPath } from 'node:url';
 import { gunzipSync, gzipSync } from 'node:zlib';
 import {
   aadtQueryUrl, applyPoiDemand, buildBlockGroups, buildRoadGraph, buildTrafficGrid,
-  overpassPoiQuery, overpassQuery,
-  overpassScenicQuery, parseAadt, parseAcs, parsePois,
+  overpassIndustrialQuery, overpassPoiQuery, overpassQuery,
+  overpassScenicQuery, parseAadt, parseAcs, parseIndustrial, parsePois,
   parseRac, parseScenic, parseWac,
 } from '../src/game/data/pipeline.js';
 import { AADT_SOURCES } from '../src/game/data/aadt.sources.mjs';
@@ -290,6 +290,14 @@ async function bake(id, force) {
   } catch (e) {
     console.warn(`  airport/rail POI fetch failed (optional): ${e.message}`);
   }
+  let industrial = [];
+  try {
+    industrial = parseIndustrial(await overpass(overpassIndustrialQuery(meta.bbox)));
+    console.log(`  industrial land: ${industrial.length} parcels`);
+  } catch (e) {
+    console.warn(`  industrial land-use fetch failed (zoning falls back): ${e.message}`);
+  }
+
   // measured average daily traffic: fetched here, once, and baked into the
   // pack so players get real congestion with no network of their own
   let traffic = null;
@@ -325,6 +333,7 @@ async function bake(id, force) {
     parks: scenic.parks,
     pois,
     ...(traffic ? { traffic } : {}),
+    ...(industrial.length ? { industrial } : {}),
   };
   const json = JSON.stringify(pack);
   const outPath = join(__dirname, '..', 'public', 'cities', `${id}.json.gz`);

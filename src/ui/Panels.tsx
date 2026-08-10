@@ -1618,10 +1618,10 @@ function HelpPanel() {
         </li>
         <li>
           <b>Draw a line</b> with <b>New line</b>: click stops along streets — the route snaps
-          to roads. Under <b>Map</b>, turn on <b>Residents</b> and <b>Work</b>: each marks the
-          dozen biggest pockets of that demand in the city, ringed where no stop of yours is
-          within a short walk. Run your line from a big unserved pocket of homes to a big
-          pocket of jobs.
+          to roads. Under <b>Map</b>, turn on <b>Residents</b> and <b>Destinations</b>: each
+          marks the dozen biggest pockets in the city, ringed where no stop of yours is within
+          a short walk. Run your line from a big unserved pocket of homes to a big
+          destination.
         </li>
         <li>
           <b>Assign buses</b> to the line and tune frequency, hours and fare.

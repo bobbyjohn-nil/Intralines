@@ -7,7 +7,7 @@ import {
   IconPeople, IconPlus, IconPointer, IconReport, IconRoute,
 } from './icons';
 
-type Heatmap = 'off' | 'pop' | 'jobs' | 'tour' | 'edu' | 'air' | 'rail' | 'modes';
+type Heatmap = 'off' | 'pop' | 'dest' | 'modes';
 
 /**
  * A dock button that opens a menu. The menu is portaled to the body: the dock
@@ -85,12 +85,8 @@ export function Toolbar() {
   };
 
   const LAYERS: [Heatmap, string, string][] = [
-    ['pop', 'Residents', 'where people live'],
-    ['jobs', 'Work', 'where the jobs are'],
-    ['tour', 'Tourism', 'venues, hotels, restaurants'],
-    ['edu', 'Education', 'schools and campuses'],
-    ['air', 'Airport', 'flyers and airport staff needing a ride'],
-    ['rail', 'Regional rail', 'train riders connecting to local transit'],
+    ['pop', 'Residents', 'where the trips start'],
+    ['dest', 'Destinations', 'jobs, campuses, hotels, airport and rail'],
     ['modes', 'Travel modes', 'who drives, walks, bikes or rides the bus'],
   ];
   const layerName = LAYERS.find(([h]) => h === heatmap)?.[1];

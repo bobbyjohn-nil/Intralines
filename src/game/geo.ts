@@ -115,3 +115,40 @@ export class SpatialGrid<T> {
     return hits.length ? hits[0] : null;
   }
 }
+
+/**
+ * Is a point inside this ring? Ray casting, in degrees — good enough at city
+ * scale, where a block group is a fraction of a degree across and the
+ * longitude squeeze is constant over it.
+ */
+export function pointInRing(ring: LngLat[], pt: LngLat): boolean {
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const [xi, yi] = ring[i];
+    const [xj, yj] = ring[j];
+    if (yi > pt[1] !== yj > pt[1] && pt[0] < ((xj - xi) * (pt[1] - yi)) / (yj - yi) + xi) {
+      inside = !inside;
+    }
+  }
+  return inside;
+}
+
+/** metres from a point to the nearest edge of a ring */
+export function distToRingM(ring: LngLat[], pt: LngLat, cosLat: number): number {
+  let best = Infinity;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const ax = (ring[j][0] - pt[0]) * 111_320 * cosLat;
+    const ay = (ring[j][1] - pt[1]) * 110_540;
+    const bx = (ring[i][0] - pt[0]) * 111_320 * cosLat;
+    const by = (ring[i][1] - pt[1]) * 110_540;
+    const dx = bx - ax;
+    const dy = by - ay;
+    const len2 = dx * dx + dy * dy;
+    // project the point (at the origin, after the shift above) onto the segment
+    const t = len2 > 0 ? Math.max(0, Math.min(1, -(ax * dx + ay * dy) / len2)) : 0;
+    const cx = ax + t * dx;
+    const cy = ay + t * dy;
+    best = Math.min(best, Math.sqrt(cx * cx + cy * cy));
+  }
+  return best;
+}

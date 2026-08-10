@@ -17,7 +17,7 @@ import {
   WORKSHOP_COST,
 } from './constants';
 import { RoadGraph, cumulativeDist } from './routing';
-import { fastDistM } from './geo';
+import { distToRingM, fastDistM, pointInRing } from './geo';
 import { reportError } from './errors';
 import { backupUnreadableSave, readSave } from './migrate';
 
@@ -84,7 +84,7 @@ export interface GameState {
   draft: DraftLine | null;
   selectedLineId: string | null;
   panel: Panel;
-  heatmap: 'off' | 'pop' | 'jobs' | 'tour' | 'edu' | 'air' | 'rail' | 'modes';
+  heatmap: 'off' | 'pop' | 'dest' | 'modes';
   /** traffic forecast overlay: color roads by congestion at trafficHour */
   trafficView: boolean;
   trafficHour: number; // 0..23
@@ -114,7 +114,7 @@ export interface GameState {
   togglePause: () => void;
   setTool: (t: Tool) => void;
   setPanel: (p: Panel) => void;
-  setHeatmap: (h: 'off' | 'pop' | 'jobs' | 'tour' | 'edu' | 'air' | 'rail' | 'modes') => void;
+  setHeatmap: (h: 'off' | 'pop' | 'dest' | 'modes') => void;
   setTrafficView: (on: boolean) => void;
   setTrafficHour: (h: number) => void;
   toggleBasemap: () => void;
@@ -333,27 +333,68 @@ function bgIndustrial(
   return bg.jobs > bg.pop && popD < medianPopD;
 }
 
-/** every block group where depot zoning would approve (for the map tint) */
-export function industrialZones(pack: CityPack): CityPack['blockGroups'] {
+/**
+ * Every parcel where depot zoning would approve — and exactly what the map
+ * tints, because the placement rule reads the same list.
+ *
+ * Real land use when the city pack has it. The census fallback below is a
+ * guess and behaves like one: more jobs than residents at low density also
+ * describes a university, a hospital or a retail park, which is how depots
+ * used to be permitted on residential streets.
+ */
+export function industrialZones(pack: CityPack): { rings: LngLat[][] }[] {
+  if (pack.industrial?.length) return pack.industrial.map((ring) => ({ rings: [ring] }));
   const median = zoneMedian(pack);
   return pack.blockGroups.filter((bg) => bgIndustrial(bg, median));
 }
 
-/** does the land around this point pass depot zoning? */
-function depotZoningOk(pack: CityPack, pt: LngLat): boolean {
-  const median = zoneMedian(pack);
+/**
+ * The block group a point actually falls in.
+ *
+ * This used to pick whichever centroid was nearest, which is not the same
+ * question and disagreed with the map constantly: an industrial estate's
+ * centroid can sit far from its edge while a small neighbouring block's
+ * centroid sits right on it, so clicks well inside the tinted zone were
+ * refused — and clicks outside it were sometimes accepted.
+ */
+function bgAt(pack: CityPack, pt: LngLat): CityPack['blockGroups'][number] | null {
+  for (const bg of pack.blockGroups) {
+    if (bg.rings.length && pointInRing(bg.rings[0], pt)) return bg;
+  }
+  // The rings are simplified for size, so neighbours do not tile perfectly and
+  // a click can land in a hairline gap. Fall back to the polygon whose edge is
+  // genuinely closest, not whose middle is.
   const cosLat = Math.cos((pack.meta.center[1] * Math.PI) / 180);
   let best: CityPack['blockGroups'][number] | null = null;
   let bestM = Infinity;
   for (const bg of pack.blockGroups) {
-    const d = fastDistM(bg.centroid, pt, cosLat);
+    if (!bg.rings.length) continue;
+    // cheap reject before measuring the edge properly
+    if (fastDistM(bg.centroid, pt, cosLat) > 3_000) continue;
+    const d = distToRingM(bg.rings[0], pt, cosLat);
     if (d < bestM) {
       bestM = d;
       best = bg;
     }
   }
-  if (!best || bestM > 900) return false; // unzoned wilderness
-  return bgIndustrial(best, median);
+  return bestM <= ZONE_EDGE_TOLERANCE_M ? best : null;
+}
+
+/** how far outside a mapped block group a click may still count as inside it */
+const ZONE_EDGE_TOLERANCE_M = 60;
+
+/** does the land at this point pass depot zoning? */
+function depotZoningOk(pack: CityPack, pt: LngLat): boolean {
+  if (pack.industrial?.length) {
+    const cosLat = Math.cos((pack.meta.center[1] * Math.PI) / 180);
+    // the tolerance lets you click the kerb outside a yard's fence line
+    return pack.industrial.some(
+      (ring) =>
+        pointInRing(ring, pt) || distToRingM(ring, pt, cosLat) <= ZONE_EDGE_TOLERANCE_M,
+    );
+  }
+  const bg = bgAt(pack, pt);
+  return bg ? bgIndustrial(bg, zoneMedian(pack)) : false; // unzoned wilderness
 }
 
 /** the Transit Authority's quarterly grading rubric */

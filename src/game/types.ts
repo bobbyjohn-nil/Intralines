@@ -104,6 +104,12 @@ export interface CityPack {
   pois?: Poi[];
   /** measured traffic counts; absent when none were published for this city */
   traffic?: TrafficGrid;
+  /**
+   * land zoned industrial (plus rail yards, ports and airfields) — where the
+   * city will permit a bus depot. Straight from OpenStreetMap; absent only
+   * when the map had nothing tagged.
+   */
+  industrial?: LngLat[][];
 }
 
 // ---------------------------------------------------------------------------

@@ -2,7 +2,8 @@ import type { CityMeta, CityPack, Poi } from '../types';
 import { idbGetPack, idbPutPack } from './idb';
 import { fetchTrafficGrid } from './aadt';
 import {
-  applyPoiDemand, buildBlockGroups, buildRoadGraph, overpassPoiQuery, overpassQuery,
+  applyPoiDemand, buildBlockGroups, buildRoadGraph, overpassIndustrialQuery,
+  overpassPoiQuery, overpassQuery, parseIndustrial,
   overpassScenicQuery, parseAcs, parsePois, parseRac, parseScenic, parseWac,
 } from './pipeline';
 import { generateBuildings } from './proceduralBuildings';
@@ -98,6 +99,13 @@ export async function loadCity(meta: CityMeta, progress: ProgressFn): Promise<Ci
     // optional flavor demand — the game works without it
   }
 
+  let industrial: [number, number][][] = [];
+  try {
+    industrial = parseIndustrial(await fetchOverpass(overpassIndustrialQuery(meta.bbox)));
+  } catch {
+    // no land-use data: depot zoning falls back to the census heuristic
+  }
+
   // measured traffic counts, baked in now so congestion works offline later
   let traffic = null as Awaited<ReturnType<typeof fetchTrafficGrid>>;
   try {
@@ -131,6 +139,7 @@ export async function loadCity(meta: CityMeta, progress: ProgressFn): Promise<Ci
     parks: scenic.parks,
     pois,
     traffic: traffic ?? undefined,
+    industrial: industrial.length ? industrial : undefined,
   };
   progress(`Saving ${meta.name}…`, 'caching locally — future launches are offline');
   await idbPutPack(meta.id, pack);

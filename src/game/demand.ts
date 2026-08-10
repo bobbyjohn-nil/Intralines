@@ -14,7 +14,13 @@ import type { CityPack, LngLat, Stop } from './types';
 import { MAX_WALK_M } from './constants';
 import { fastDistM } from './geo';
 
-export type DemandMode = 'pop' | 'jobs' | 'tour' | 'edu' | 'air' | 'rail';
+/**
+ * Two questions worth asking of a city, not seven. Tourism and education were
+ * always subsets of the jobs figure, and airport and rail trips are destinations
+ * like any other — splitting them out made six layers that mostly redrew each
+ * other.
+ */
+export type DemandMode = 'pop' | 'dest';
 
 export interface DemandSpot {
   /** demand-weighted centre of the pocket */
@@ -36,14 +42,10 @@ export function demandValue(
   bg: CityPack['blockGroups'][number],
   mode: DemandMode,
 ): number {
-  switch (mode) {
-    case 'pop': return bg.pop;
-    case 'jobs': return bg.jobs;
-    case 'tour': return bg.tour ?? 0;
-    case 'edu': return bg.edu ?? 0;
-    case 'air': return bg.air ?? 0;
-    case 'rail': return bg.rail ?? 0;
-  }
+  if (mode === 'pop') return bg.pop;
+  // jobs already counts the campus and hotel work; the airport and the rail
+  // station pull their own trips on top
+  return bg.jobs + (bg.air ?? 0) + (bg.rail ?? 0);
 }
 
 /**

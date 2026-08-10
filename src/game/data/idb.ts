@@ -5,7 +5,7 @@
 const DB_NAME = 'intralines';
 const OLD_DB_NAME = 'transit-lines';
 const STORE = 'cityPacks';
-export const PACK_FORMAT_VERSION = 8; // v8: measured traffic counts (AADT)
+export const PACK_FORMAT_VERSION = 9; // v9: + industrial land use (depot zoning)
 
 function open(name: string): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {

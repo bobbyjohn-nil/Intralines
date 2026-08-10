@@ -5,11 +5,7 @@ import { fmtInt } from './format';
 
 const LABEL: Record<DemandMode, { title: string; unit: string }> = {
   pop: { title: 'Residents', unit: 'residents' },
-  jobs: { title: 'Workplaces', unit: 'jobs' },
-  tour: { title: 'Tourism', unit: 'visitor jobs' },
-  edu: { title: 'Education', unit: 'students & staff' },
-  air: { title: 'Airport', unit: 'trips/day' },
-  rail: { title: 'Regional rail', unit: 'trips/day' },
+  dest: { title: 'Destinations', unit: 'trips/day' },
 };
 
 /**

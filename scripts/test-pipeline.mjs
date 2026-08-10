@@ -4,7 +4,7 @@
 
 import assert from 'node:assert/strict';
 import {
-  buildRoadGraph, buildBlockGroups, parseAcs, parseRac, parseScenic, parseWac, stitchRings,
+  buildRoadGraph, buildBlockGroups, parseAcs, parseRac, parseScenic, parseWac, stitchRings, parsePois, overpassPoiQuery,
 } from '../src/game/data/pipeline.js';
 
 const BBOX = [-71.9, 42.2, -71.7, 42.36];
@@ -221,6 +221,39 @@ const BBOX = [-71.9, 42.2, -71.7, 42.36];
   assert.equal(bgs[0].pop, 900);
   assert.equal(bgs[0].jobs, 300);
   assert.ok(Math.abs(bgs[0].areaKm2 - 0.5) < 0.01, 'AREALAND used for area');
+}
+
+// Rail stations: OSM tags them several ways and the game must find all of
+// them. Worcester's Union Station is mapped as its building, which an earlier
+// query shape missed entirely, leaving the city with no train station.
+{
+  const pois = parsePois({
+    elements: [
+      { type: 'way', tags: { building: 'train_station', name: 'Union Station' },
+        center: { lon: -71.7994, lat: 42.2617 } },
+      { type: 'node', tags: { public_transport: 'station', train: 'yes', name: 'Grafton' },
+        lon: -71.686, lat: 42.246 },
+      { type: 'node', tags: { railway: 'station', name: 'Westborough' },
+        lon: -71.63, lat: 42.27 },
+      { type: 'node', tags: { railway: 'halt', name: 'Little Halt' },
+        lon: -71.9, lat: 42.3 },
+      { type: 'node', tags: { railway: 'station', station: 'subway', name: 'Metro' },
+        lon: -71.8, lat: 42.2 },
+      { type: 'node', tags: { railway: 'station', subway: 'yes', name: 'Metro 2' },
+        lon: -71.81, lat: 42.21 },
+      { type: 'node', tags: { railway: 'station', disused: 'yes', name: 'Ghost' },
+        lon: -71.82, lat: 42.22 },
+    ],
+  });
+  const names = pois.filter((p) => p.kind === 'rail').map((p) => p.name).sort();
+  assert.deepEqual(
+    names,
+    ['Grafton', 'Little Halt', 'Union Station', 'Westborough'],
+    'every real station tagging found; metro and disused excluded',
+  );
+  const q = overpassPoiQuery(BBOX);
+  assert.ok(q.includes('building"="train_station'), 'query asks for station buildings');
+  assert.ok(q.includes('public_transport"="station'), 'query asks for the modern scheme');
 }
 
 console.log('✓ all pipeline fixture tests passed');

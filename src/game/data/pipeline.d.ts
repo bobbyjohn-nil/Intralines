@@ -46,3 +46,8 @@ export declare function buildTrafficGrid(
   bbox: [number, number, number, number],
 ): TrafficGrid | null;
 export declare function trafficAadtAt(grid: TrafficGrid | null | undefined, pt: LngLat): number;
+
+export declare function overpassIndustrialQuery(
+  bbox: [number, number, number, number],
+): string;
+export declare function parseIndustrial(overpass: { elements: unknown[] }): LngLat[][];

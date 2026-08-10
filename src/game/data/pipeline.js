@@ -73,14 +73,38 @@ export function parseScenic(overpass) {
 export function overpassPoiQuery(bbox) {
   const [w, s, e, n] = bbox;
   const bb = `(${s},${w},${n},${e})`;
+  // heavy rail only — the game models commuter/intercity transfers, not metros
+  const sub = '["station"!~"subway|light_rail|monorail|tram"]';
   return (
     `[out:json][timeout:120];(` +
     `way["aeroway"="aerodrome"]${bb};` +
     `relation["aeroway"="aerodrome"]${bb};` +
     `node["aeroway"="aerodrome"]${bb};` +
-    `node["railway"="station"]["station"!~"subway|light_rail|monorail"]${bb};` +
-    `way["railway"="station"]["station"!~"subway|light_rail|monorail"]${bb};` +
+    // Rail stations are tagged half a dozen ways in the wild: a node on the
+    // track, the station building as a way, or only the newer
+    // public_transport scheme. Asking for one shape misses real stations —
+    // Worcester's Union Station among them.
+    `node["railway"~"^(station|halt)$"]${sub}${bb};` +
+    `way["railway"~"^(station|halt)$"]${sub}${bb};` +
+    `relation["railway"~"^(station|halt)$"]${sub}${bb};` +
+    `node["public_transport"="station"]["train"="yes"]${bb};` +
+    `way["public_transport"="station"]["train"="yes"]${bb};` +
+    `way["building"="train_station"]${bb};` +
+    `relation["building"="train_station"]${bb};` +
     `);out center tags;`
+  );
+}
+
+/** every tagging that means "trains stop here", minus the metro flavours */
+function isRailStation(tags) {
+  if (tags.subway === 'yes' || tags.light_rail === 'yes' || tags.tram === 'yes') return false;
+  if (/subway|light_rail|monorail|tram/.test(tags.station ?? '')) return false;
+  if (tags.disused === 'yes' || tags.abandoned === 'yes') return false;
+  return (
+    tags.railway === 'station' ||
+    tags.railway === 'halt' ||
+    (tags.public_transport === 'station' && tags.train === 'yes') ||
+    tags.building === 'train_station'
   );
 }
 
@@ -107,8 +131,14 @@ export function parsePois(overpass) {
         name: tags.name || 'Airport',
         big: Boolean(tags.iata),
       });
-    } else if (tags.railway === 'station') {
-      rails.push({ kind: 'rail', pt, name: tags.name || 'Rail station' });
+    } else if (isRailStation(tags)) {
+      rails.push({
+        kind: 'rail',
+        pt,
+        name: tags.name || 'Rail station',
+        // a full station outranks a request halt or a bare building outline
+        big: tags.railway === 'station',
+      });
     }
   }
   // commercial airports first, then whatever's left; at most a few
@@ -123,7 +153,11 @@ export function parsePois(overpass) {
     );
     if (!dup) keptRail.push(r);
   }
-  return [...airports.slice(0, 3), ...keptRail.slice(0, 12)];
+  keptRail.sort((a, b) => Number(b.big) - Number(a.big));
+  return [
+    ...airports.slice(0, 3),
+    ...keptRail.slice(0, 12).map(({ big: _big, ...r }) => r),
+  ];
 }
 
 /**
@@ -748,4 +782,55 @@ export function trafficAadtAt(grid, pt) {
   const y = Math.floor((pt[1] - grid.lat0) / grid.cell);
   if (x < 0 || y < 0 || x >= grid.cols || y >= grid.rows) return 0;
   return grid.aadt[y * grid.cols + x] || 0;
+}
+
+// ---------------------------------------------------------------------------
+// Where a bus depot is allowed
+//
+// This used to be inferred: any census block group with more jobs than
+// residents and below-median density was treated as industrial. That reads a
+// university campus, a hospital, a school district office and a retail park as
+// industrial land, which is how depots ended up approved on residential
+// streets. OpenStreetMap already records what land actually is, so ask it.
+
+/** land a city would actually let you put a bus garage on */
+export function overpassIndustrialQuery(bbox) {
+  const [w, s, e, n] = bbox;
+  const bb = `(${s},${w},${n},${e})`;
+  return (
+    `[out:json][timeout:240];(` +
+    `way["landuse"~"^(industrial|railway|port|quarry)$"]${bb};` +
+    `relation["landuse"~"^(industrial|railway|port|quarry)$"]${bb};` +
+    `way["aeroway"="aerodrome"]${bb};` +
+    `relation["aeroway"="aerodrome"]${bb};` +
+    // existing bus/tram garages and freight yards, which are the real thing
+    `way["landuse"="depot"]${bb};` +
+    `way["amenity"="bus_station"]${bb};` +
+    `);out geom;`
+  );
+}
+
+/** industrial rings, big enough to hold a garage */
+export function parseIndustrial(overpass) {
+  const out = [];
+  const push = (coords) => {
+    if (!coords || coords.length < 4) return;
+    const ring = simplifyRing(coords, 0.00018);
+    if (ring.length < 4) return;
+    // a garage plus its yard needs room; anything under a hectare is a shed
+    if (ringAreaKm2(ring) < 0.01) return;
+    out.push(ring);
+  };
+  for (const el of overpass.elements ?? []) {
+    if (el.type === 'way' && Array.isArray(el.geometry)) {
+      push(el.geometry.map((g) => [g.lon, g.lat]));
+    } else if (el.type === 'relation' && Array.isArray(el.members)) {
+      const segs = el.members
+        .filter((m) => (m.role === 'outer' || m.role === '') && Array.isArray(m.geometry))
+        .map((m) => m.geometry.map((g) => [g.lon, g.lat]));
+      for (const ring of stitchRings(segs)) push(ring);
+    }
+    if (out.length > 600) break;
+  }
+  return out.slice(0, 600);
 }
