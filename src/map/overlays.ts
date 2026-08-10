@@ -128,10 +128,12 @@ export function ensureOverlays(map: MLMap): void {
           16, ['*', 24, f],
         ],
         'circle-color': HEAT_COLORS.pop.fill,
-        'circle-opacity': 0.3,
+        // a pocket your stops already reach recedes; one they miss is drawn
+        // firmly, because that is the one you can do something about
+        'circle-opacity': ['case', ['boolean', ['get', 'served'], false], 0.14, 0.34],
         'circle-stroke-color': HEAT_COLORS.pop.stroke,
-        'circle-stroke-width': 1.6,
-        'circle-stroke-opacity': 0.95,
+        'circle-stroke-width': ['case', ['boolean', ['get', 'served'], false], 1.2, 2.6],
+        'circle-stroke-opacity': ['case', ['boolean', ['get', 'served'], false], 0.5, 0.95],
       },
     });
   }
@@ -265,6 +267,7 @@ export function updateHeatmap(
   pack: CityPack,
   mode: 'off' | HeatMode,
   bgModes?: { bus: number; car: number; walk: number; bike: number }[],
+  stops: Stop[] = [],
 ): void {
   if (mode === 'off') {
     setData(map, 'heatmap-src', EMPTY);
@@ -341,33 +344,20 @@ export function updateHeatmap(
     return;
   }
 
-  const value = (bg: CityPack['blockGroups'][number]): number =>
-    mode === 'pop' ? bg.pop
-    : mode === 'jobs' ? bg.jobs
-    : mode === 'tour' ? bg.tour ?? 0
-    : mode === 'air' ? bg.air ?? 0
-    : mode === 'rail' ? bg.rail ?? 0
-    : bg.edu ?? 0;
-  const dens = pack.blockGroups.map((bg) => value(bg) / Math.max(bg.areaKm2, 0.02));
-  const positive = dens.filter((d) => d > 0).sort((a, b) => a - b);
-  const norm = positive[Math.floor(positive.length * 0.92)] || 1;
-  // people live everywhere, so the residents layer keeps a low floor; the
-  // workplace-style layers cut harder so scattered corner-store jobs don't
-  // paint whole residential neighborhoods as work demand. Cells above the
-  // cut become dots with a minimum size, so a small satellite town's
-  // demand is just as legible as downtown's.
-  const cut = mode === 'pop' ? 0.03 : 0.12;
-  const features = pack.blockGroups.flatMap((bg, i) => {
-    const rel = dens[i] / norm;
-    if (rel < cut) return [];
-    return [
-      {
-        type: 'Feature' as const,
-        properties: { w: Math.pow(Math.min(rel, 1), 0.75), bg: i },
-        geometry: { type: 'Point' as const, coordinates: bg.centroid },
-      },
-    ];
-  });
+  // A few big pockets rather than a dot per census block group: the raw data
+  // covers the whole city and told you nothing you could act on.
+  const spots = demandSpots(pack, mode, stops);
+  const biggest = spots[0]?.value ?? 1;
+  const features = spots.map((spot) => ({
+    type: 'Feature' as const,
+    properties: {
+      // area, not radius, carries the number — that is how people read a blob
+      w: Math.max(0.35, Math.sqrt(spot.value / biggest)),
+      served: spot.served,
+      rank: spot.rank,
+    },
+    geometry: { type: 'Point' as const, coordinates: spot.pt },
+  }));
   if (map.getLayer('heatmap-blob')) {
     map.setPaintProperty('heatmap-blob', 'circle-color', HEAT_COLORS[mode].fill);
     map.setPaintProperty('heatmap-blob', 'circle-stroke-color', HEAT_COLORS[mode].stroke);
@@ -449,6 +439,7 @@ export function updateDraftCursor(map: MLMap, from: LngLat | null, to: LngLat | 
 // same recipe the bus animation uses to slow buses down.
 
 import { congestionGain, measuredBusyness, trafficFactor } from '../game/constants';
+import { demandSpots } from '../game/demand';
 
 let trafficFeatures: GeoJSON.Feature[] | null = null;
 let trafficCity: string | null = null;
