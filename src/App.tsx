@@ -6,7 +6,6 @@ import { Toolbar } from './ui/Toolbar';
 import { PanelHost } from './ui/Panels';
 import { DraftBar } from './ui/DraftBar';
 import { Notices } from './ui/Notices';
-import { DemandKey } from './ui/DemandKey';
 import { Menu } from './ui/Menu';
 import { Loading } from './ui/Loading';
 import { Founding } from './ui/Founding';
@@ -92,7 +91,6 @@ function Screen({
       <Toolbar />
       <PanelHost />
       <DraftBar />
-      <DemandKey />
       <Notices />
     </div>
   );

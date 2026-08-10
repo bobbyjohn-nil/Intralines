@@ -1618,10 +1618,9 @@ function HelpPanel() {
         </li>
         <li>
           <b>Draw a line</b> with <b>New line</b>: click stops along streets — the route snaps
-          to roads. Under <b>Map</b>, turn on <b>Residents</b> and <b>Destinations</b>: each
-          marks the dozen biggest pockets in the city, ringed where no stop of yours is within
-          a short walk. Run your line from a big unserved pocket of homes to a big
-          destination.
+          to roads. Under <b>Map</b>, turn on <b>Residents</b> (purple, where trips start) and{' '}
+          <b>Destinations</b> (teal — jobs, campuses, hotels, the airport and the rail
+          station). Connect the two!
         </li>
         <li>
           <b>Assign buses</b> to the line and tune frequency, hours and fare.

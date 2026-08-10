@@ -620,7 +620,7 @@ export function MapView({ pack }: { pack: CityPack }) {
     const map = mapRef.current;
     if (!map || !readyRef.current) return;
     const st = useGame.getState();
-    updateHeatmap(map, pack, st.heatmap, st.stats?.bgModes, st.stops);
+    updateHeatmap(map, pack, st.heatmap, st.stats?.bgModes);
     updateNetwork(map, st.stops, st.lines, st.selectedLineId);
     updateDraft(map, st.draft);
     updateTraffic(map, pack, st.trafficView, st.trafficHour, reliefNow());
@@ -685,7 +685,7 @@ export function MapView({ pack }: { pack: CityPack }) {
   useEffect(() => {
     const map = mapRef.current;
     if (map && readyRef.current) {
-      updateHeatmap(map, pack, heatmap, stats?.bgModes, useGame.getState().stops);
+      updateHeatmap(map, pack, heatmap, stats?.bgModes);
       if (heatmap === 'off') popupRef.current?.remove();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
