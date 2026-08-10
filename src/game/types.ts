@@ -146,9 +146,12 @@ export interface BusLine {
   firstHour: number;
   lastHour: number;
   fare: number;
-  modelId: string;
-  /** buses the player assigned to this line */
+  /** buses assigned per model — routes can mix types */
+  vehiclesByModel: Record<string, number>;
+  /** total buses assigned (kept in sync with vehiclesByModel) */
   vehicles: number;
+  /** legacy single-model field from old saves (migrated on load) */
+  modelId?: string;
   active: boolean;
 }
 
@@ -254,6 +257,8 @@ export interface SaveGame {
   fleet: FleetEntry[];
   totalRidersServed: number;
   loanTaken: boolean;
+  /** outstanding Harbor Mutual balance (absent in old saves) */
+  goodLoan?: number;
   /** quarterly report card history (absent in old saves) */
   reports?: ReportCard[];
   /** player company identity (absent in old saves) */

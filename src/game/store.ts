@@ -6,11 +6,13 @@ import type {
 import {
   BUS_MODELS, DEPOT_CAPACITY, DEPOT_UPGRADE_COST, DEPOT_UPKEEP_PER_DAY,
   BUSES_PER_MECHANIC, CHARGERS_COST, FLEET_TIER_CAP, FLEET_TIER_COST, FLEET_TIER_NAMES,
-  FLEET_UPGRADE_COST_SHARE, HEADWAY_CHOICES, LINE_COLORS, LOAN_AMOUNT, MAX_DEPOTS,
+  FLEET_UPGRADE_COST_SHARE, GOOD_LOAN_DAILY_RATE, GOOD_LOAN_MAX, GOOD_LOAN_MIN_SCORE,
+  HEADWAY_CHOICES, LINE_COLORS, LOAN_AMOUNT, MAX_DEPOTS,
   LOAN_FEE, LOAN_INTEREST_PER_DAY, LOAN_PAYOFF, MECHANIC_WAGE_PER_DAY, quarterLabel,
   nextDepotCost, OFFICE_OVERHEAD_PER_DAY, QUARTER_MIN, REFURB_COST_SHARE, REPORT_FINE,
   REPORT_GRANT_PER_POINT, SAVE_KEY_PREFIX,
-  SAVE_VERSION, SPEEDS, START_CASH, STOP_COST, STOP_MAX_KMH, STOP_TIER_NAMES,
+  SAVE_VERSION, SPEEDS, START_CASH, STOP_COST, STOP_MAX_KMH, STOP_TIER_MIN_LINES,
+  STOP_TIER_NAMES,
   STOP_UPGRADE_COST, SUBSIDY_PER_RIDER, WASH_BAY_COST, WEAR_COST_PENALTY, WEAR_PER_DAY,
   WORKSHOP_COST,
 } from './constants';
@@ -63,6 +65,8 @@ export interface GameState {
   fleet: FleetEntry[];
   totalRidersServed: number;
   loanTaken: boolean;
+  /** outstanding Harbor Mutual balance */
+  goodLoan: number;
   reports: ReportCard[];
   /** hire a driver automatically with every bus purchase */
   autoHireDriver: boolean;
@@ -118,6 +122,8 @@ export interface GameState {
   finishDraft: () => void;
   selectLine: (id: string | null) => void;
   selectStop: (id: string | null) => void;
+  /** assign `count` buses of one model to a line (mixes freely with others) */
+  setLineVehicles: (lineId: string, modelId: string, count: number) => void;
   setHoverStop: (id: string | null) => void;
   updateLine: (id: string, patch: Partial<BusLine>) => void;
   deleteLine: (id: string) => void;
@@ -138,6 +144,8 @@ export interface GameState {
   buyDepotAddon: (depotId: string, addon: 'workshop' | 'washBay' | 'chargers') => void;
   takeLoan: () => void;
   repayLoan: () => void;
+  takeGoodLoan: () => void;
+  repayGoodLoan: () => void;
   notify: (text: string, kind?: Notice['kind']) => void;
   dismissNotice: (id: number) => void;
   saveGame: () => void;
@@ -182,9 +190,37 @@ export function fleetTotal(fleet: FleetEntry[]): number {
 
 export function fleetAssigned(lines: BusLine[], modelId?: string): number {
   return lines.reduce(
-    (s, l) => s + (modelId === undefined || l.modelId === modelId ? l.vehicles : 0),
+    (s, l) =>
+      s +
+      (modelId === undefined
+        ? l.vehicles
+        : l.vehiclesByModel?.[modelId] ?? 0),
     0,
   );
+}
+
+/** models actually running on a line, expanded one entry per bus */
+export function lineModelList(l: BusLine): string[] {
+  const out: string[] = [];
+  for (const [mid, n] of Object.entries(l.vehiclesByModel ?? {})) {
+    for (let i = 0; i < n; i++) out.push(mid);
+  }
+  return out;
+}
+
+/** the line's reference model (slowest assigned — it sets the schedule) */
+export function lineRefModel(l: BusLine): string {
+  let ref: string | null = null;
+  let slowest = Infinity;
+  for (const [mid, n] of Object.entries(l.vehiclesByModel ?? {})) {
+    if (n <= 0) continue;
+    const m = busModel(mid);
+    if (m.kmh < slowest) {
+      slowest = m.kmh;
+      ref = mid;
+    }
+  }
+  return ref ?? l.modelId ?? 'minibus';
 }
 
 export function driversNeeded(lines: BusLine[]): number {
@@ -214,6 +250,37 @@ export function fleetPerf(
     wear,
     tier,
   };
+}
+
+/**
+ * Company credit score, 300-850. Reputable lenders read the whole file:
+ * cash cushion, profitability, the latest report card, maintenance
+ * discipline — and whether Talon & Grasp already have their hooks in you.
+ */
+export function creditScore(s: GameState): number {
+  let score = 580;
+  score += Math.min(120, Math.max(0, s.cash / 10_000));
+  if (s.cash < 0) score -= 120;
+  const rev = s.stats?.perLine.reduce((t, p) => t + p.dailyRevenue, 0) ?? 0;
+  const cost = s.stats?.perLine.reduce((t, p) => t + p.dailyCost, 0) ?? 0;
+  score += 80 * Math.max(-1, Math.min(1, (rev - cost) / 20_000));
+  const latest = s.reports[s.reports.length - 1];
+  if (latest) score += (latest.overall - 50) * 1.2;
+  if (s.loanTaken) score -= 90; // predatory debt on the books
+  if (s.goodLoan > 0) score -= 30;
+  const total = fleetTotal(s.fleet);
+  if (total > 0) {
+    const wear = s.fleet.reduce((t, f) => t + f.wear * f.count, 0) / total;
+    if (wear > 60) score -= 40; // ragged fleet reads as sloppy management
+  }
+  return Math.round(Math.max(300, Math.min(850, score)));
+}
+
+/** what Harbor Mutual will lend at a given score ($0 = declined) */
+export function goodLoanOffer(score: number): number {
+  if (score < GOOD_LOAN_MIN_SCORE) return 0;
+  const t = Math.min(1, (score - GOOD_LOAN_MIN_SCORE) / (820 - GOOD_LOAN_MIN_SCORE));
+  return Math.round((60_000 + t * (GOOD_LOAN_MAX - 60_000)) / 10_000) * 10_000;
 }
 
 /** letter grade for a 0..100 report score */
@@ -473,8 +540,40 @@ export const useGame = create<GameState>((set, get) => {
         costMult,
         stops: s.stops.map((st) => ({ id: st.id, pt: st.pt, tier: st.tier ?? 1 })),
         lines: s.lines.map((l) => {
-          const m = busModel(l.modelId);
-          const perf = fleetPerf(s.fleet, l.modelId);
+          // routes can mix bus types: capacity and running costs blend
+          // across the assigned fleet, the slowest model sets the pace and
+          // the smallest tank decides refuel stops
+          const entries = Object.entries(l.vehiclesByModel ?? {}).filter(
+            ([, n]) => n > 0,
+          );
+          let capacity = 0;
+          let costPerKm = 0;
+          let fuelPerKm = 0;
+          let kmh = Infinity;
+          let tankKm = Infinity;
+          let total = 0;
+          for (const [mid, n] of entries) {
+            const m = busModel(mid);
+            const perf = fleetPerf(s.fleet, mid);
+            capacity += m.capacity * perf.capMult * n;
+            costPerKm += m.costPerKm * perf.costMult * n;
+            fuelPerKm += m.fuelPerKm * perf.costMult * n;
+            kmh = Math.min(kmh, m.kmh);
+            tankKm = Math.min(tankKm, m.tankKm);
+            total += n;
+          }
+          if (total === 0) {
+            const m = busModel(lineRefModel(l));
+            capacity = m.capacity;
+            costPerKm = m.costPerKm;
+            fuelPerKm = m.fuelPerKm;
+            kmh = m.kmh;
+            tankKm = m.tankKm;
+          } else {
+            capacity /= total;
+            costPerKm /= total;
+            fuelPerKm /= total;
+          }
           return {
             id: l.id,
             stopIds: l.stopIds,
@@ -486,11 +585,11 @@ export const useGame = create<GameState>((set, get) => {
             firstHour: l.firstHour,
             lastHour: l.lastHour,
             fare: l.fare,
-            capacity: Math.round(m.capacity * perf.capMult),
-            kmh: m.kmh,
-            costPerKm: m.costPerKm * perf.costMult,
-            fuelPerKm: m.fuelPerKm * perf.costMult,
-            tankKm: m.tankKm,
+            capacity: Math.round(capacity),
+            kmh,
+            costPerKm,
+            fuelPerKm,
+            tankKm,
             vehicles: effectiveVehicles.get(l.id) ?? 0,
             active: l.active && s.depots.length > 0,
           };
@@ -524,6 +623,7 @@ export const useGame = create<GameState>((set, get) => {
     fleet: [],
     totalRidersServed: 0,
     loanTaken: false,
+    goodLoan: 0,
     reports: [],
     autoHireDriver:
       typeof localStorage !== 'undefined' &&
@@ -608,11 +708,15 @@ export const useGame = create<GameState>((set, get) => {
               cash: sv.cash,
               clockMin: sv.clockMin,
               stops: sv.stops,
-              // saves from before time-of-day frequencies / stop buffers
+              // saves from before time-of-day frequencies / stop buffers /
+              // mixed-model routes
               lines: sv.lines.map((l) => ({
                 ...l,
                 peakHeadwayMin: l.peakHeadwayMin ?? l.headwayMin,
                 stopBufferSec: l.stopBufferSec ?? 0,
+                vehiclesByModel:
+                  l.vehiclesByModel ??
+                  (l.modelId && l.vehicles > 0 ? { [l.modelId]: l.vehicles } : {}),
               })),
               depots,
               staff: sv.staff,
@@ -624,6 +728,7 @@ export const useGame = create<GameState>((set, get) => {
               })),
               totalRidersServed: sv.totalRidersServed,
               loanTaken: sv.loanTaken,
+              goodLoan: sv.goodLoan ?? 0,
               reports: sv.reports ?? [],
               companyName: sv.companyName ?? '',
               companyColor: sv.companyColor ?? LINE_COLORS[0],
@@ -654,6 +759,7 @@ export const useGame = create<GameState>((set, get) => {
         fleet: [],
         totalRidersServed: 0,
         loanTaken: false,
+        goodLoan: 0,
         reports: [],
         companyName: '',
         companyColor: LINE_COLORS[0],
@@ -711,6 +817,7 @@ export const useGame = create<GameState>((set, get) => {
       for (const d of s.depots) fixedPerDay += DEPOT_UPKEEP_PER_DAY[d.level] ?? 0;
       fixedPerDay += s.staff.mechanics * MECHANIC_WAGE_PER_DAY;
       if (s.loanTaken) fixedPerDay += LOAN_INTEREST_PER_DAY;
+      if (s.goodLoan > 0) fixedPerDay += s.goodLoan * GOOD_LOAN_DAILY_RATE;
       dCash -= (fixedPerDay / 1440) * dtMin;
 
       const prevTotal = s.totalRidersServed;
@@ -1101,12 +1208,6 @@ export const useGame = create<GameState>((set, get) => {
         s.lines.length === 0 && s.companyColor
           ? s.companyColor
           : LINE_COLORS[(lineSeq - 1) % LINE_COLORS.length];
-      const defaultModel =
-        fleetOwned(s.fleet, 'citybus') - fleetAssigned(s.lines, 'citybus') > 0
-          ? 'citybus'
-          : BUS_MODELS.find(
-              (m) => fleetOwned(s.fleet, m.id) - fleetAssigned(s.lines, m.id) > 0,
-            )?.id ?? 'minibus';
       const line: BusLine = {
         id,
         name: `Line ${lineSeq}`,
@@ -1122,7 +1223,7 @@ export const useGame = create<GameState>((set, get) => {
         firstHour: 6,
         lastHour: 22,
         fare: 2.25,
-        modelId: defaultModel,
+        vehiclesByModel: {},
         vehicles: 0,
         active: true,
       };
@@ -1164,6 +1265,26 @@ export const useGame = create<GameState>((set, get) => {
       set({ selectedStopId: id, panel: id ? 'station' : 'none' }),
 
     setHoverStop: (id) => set({ hoverStopId: id }),
+
+    setLineVehicles: (lineId, modelId, count) => {
+      const s = get();
+      const line = s.lines.find((l) => l.id === lineId);
+      if (!line) return;
+      const current = line.vehiclesByModel?.[modelId] ?? 0;
+      const spareOfModel =
+        fleetOwned(s.fleet, modelId) - fleetAssigned(s.lines, modelId) + current;
+      const next = Math.max(0, Math.min(count, spareOfModel));
+      const vehiclesByModel = { ...(line.vehiclesByModel ?? {}) };
+      if (next > 0) vehiclesByModel[modelId] = next;
+      else delete vehiclesByModel[modelId];
+      const vehicles = Object.values(vehiclesByModel).reduce((t, n) => t + n, 0);
+      set({
+        lines: s.lines.map((l) =>
+          l.id === lineId ? { ...l, vehiclesByModel, vehicles } : l,
+        ),
+      });
+      touchNetwork();
+    },
 
     updateLine: (id, patch) => {
       set((s) => ({ lines: s.lines.map((l) => (l.id === id ? { ...l, ...patch } : l)) }));
@@ -1433,7 +1554,18 @@ export const useGame = create<GameState>((set, get) => {
       if (!st) return;
       const next = (st.tier ?? 1) + 1;
       const cost = STOP_UPGRADE_COST[next];
-      if (!cost) return; // already a full station
+      if (!cost) return; // already maxed out
+      // hub tiers need the lines to justify them
+      const needLines = STOP_TIER_MIN_LINES[next];
+      const linesHere = s.lines.filter((l) => l.stopIds.includes(stopId)).length;
+      if (needLines && linesHere < needLines) {
+        get().notify(
+          `${STOP_TIER_NAMES[next]} needs at least ${needLines} lines calling at ` +
+            `${st.name} — only ${linesHere} do${linesHere === 1 ? 'es' : ''} today.`,
+          'bad',
+        );
+        return;
+      }
       if (s.cash < cost) {
         get().notify('Not enough cash.', 'bad');
         return;
@@ -1548,6 +1680,46 @@ export const useGame = create<GameState>((set, get) => {
       get().saveGame();
     },
 
+    takeGoodLoan: () => {
+      const s = get();
+      if (s.goodLoan > 0) {
+        get().notify('Harbor Mutual: one loan at a time, please.', 'bad');
+        return;
+      }
+      const score = creditScore(s);
+      const offer = goodLoanOffer(score);
+      if (offer <= 0) {
+        get().notify(
+          `Harbor Mutual reviews your file (${score} credit) and politely ` +
+            `declines. Come back above ${GOOD_LOAN_MIN_SCORE}.`,
+          'bad',
+        );
+        return;
+      }
+      set({ cash: s.cash + offer, goodLoan: offer });
+      get().notify(
+        `Harbor Mutual approves $${(offer / 1000).toFixed(0)}k on your ` +
+          `${score} credit score. Fair terms, firm handshake.`,
+        'good',
+      );
+      get().saveGame();
+    },
+
+    repayGoodLoan: () => {
+      const s = get();
+      if (s.goodLoan <= 0) return;
+      if (s.cash < s.goodLoan) {
+        get().notify('Not enough cash to clear the Harbor Mutual balance.', 'bad');
+        return;
+      }
+      set({ cash: s.cash - s.goodLoan, goodLoan: 0 });
+      get().notify(
+        'Harbor Mutual balance cleared. They send a tasteful thank-you card.',
+        'good',
+      );
+      get().saveGame();
+    },
+
     notify: (text, kind = 'info') => {
       const id = ++noticeSeq;
       set((s) => ({ notices: [...s.notices.slice(-4), { id, text, kind }] }));
@@ -1572,6 +1744,7 @@ export const useGame = create<GameState>((set, get) => {
         fleet: s.fleet,
         totalRidersServed: s.totalRidersServed,
         loanTaken: s.loanTaken,
+        goodLoan: s.goodLoan,
         reports: s.reports,
         companyName: s.companyName,
         companyColor: s.companyColor,

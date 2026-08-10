@@ -231,7 +231,8 @@ export function MapView({ pack }: { pack: CityPack }) {
           if (!m) {
             const el = document.createElement('div');
             el.className = 'stop-count';
-            m = new maplibregl.Marker({ element: el, anchor: 'bottom', offset: [0, -10] })
+            // the gauge is a donut wrapped around the stop's white dot
+            m = new maplibregl.Marker({ element: el, anchor: 'center' })
               .setLngLat(c.pt)
               .addTo(map!);
             chips.set(c.id, m);
@@ -239,17 +240,18 @@ export function MapView({ pack }: { pack: CityPack }) {
           const el = m.getElement();
           if (el.dataset.count !== String(c.count)) {
             el.dataset.count = String(c.count);
-            // circular gauge: fills as the crowd builds (full at ~14 waiting)
+            // ring gauge around the stop dot: fills as the crowd builds
+            // (full at ~14 waiting); open center lets the dot show through
             const frac = Math.min(c.count / 14, 1);
             const R = 8.5;
             const circ = 2 * Math.PI * R;
             const color = frac < 0.55 ? '#74b06f' : frac < 0.85 ? '#e0a13c' : '#d16060';
             el.innerHTML =
               `<svg viewBox="0 0 24 24" width="22" height="22">` +
-              `<circle cx="12" cy="12" r="${R}" fill="rgba(30,28,22,0.78)" ` +
-              `stroke="rgba(255,252,240,0.35)" stroke-width="3.5"/>` +
+              `<circle cx="12" cy="12" r="${R}" fill="none" ` +
+              `stroke="rgba(30,28,22,0.4)" stroke-width="3"/>` +
               `<circle cx="12" cy="12" r="${R}" fill="none" stroke="${color}" ` +
-              `stroke-width="3.5" stroke-linecap="round" ` +
+              `stroke-width="3" stroke-linecap="round" ` +
               `stroke-dasharray="${(frac * circ).toFixed(1)} ${circ.toFixed(1)}" ` +
               `transform="rotate(-90 12 12)"/></svg>`;
           }

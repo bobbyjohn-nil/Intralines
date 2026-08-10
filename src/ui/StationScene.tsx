@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import * as THREE from 'three';
 import { makeBusMesh } from '../map/busLayer3d';
-import { useGame } from '../game/store';
+import { lineRefModel, useGame } from '../game/store';
 
 /** visit length in real ms per speed setting — faster game, snappier stop */
 const VISIT_MS_BY_SPEED = [5200, 2600, 1300];
@@ -32,6 +32,8 @@ function makePerson(i: number): THREE.Group {
   );
   head.position.y = 1.32;
   g.add(head);
+  // nobody stands at attention at a bus stop: vary height a touch
+  g.scale.setScalar(0.9 + Math.random() * 0.2);
   return g;
 }
 
@@ -70,6 +72,20 @@ function makeFurniture(tier: number): THREE.Group {
     );
     bench.position.set(0, 0.55, -2.5);
     g.add(bench);
+  }
+  if (tier >= 4) {
+    // interchange / hub: a tall pylon sign marks the place from blocks away
+    const pylon = new THREE.Mesh(new THREE.BoxGeometry(0.22, 5.2, 0.22), steel);
+    pylon.position.set(4.6, 2.6, -2.9);
+    g.add(pylon);
+    const topSign = new THREE.Mesh(
+      new THREE.BoxGeometry(1.5, 0.9, 0.16),
+      new THREE.MeshLambertMaterial({
+        color: 0x2b4c8c, emissive: 0x1a3a6e, emissiveIntensity: 0.4,
+      }),
+    );
+    topSign.position.set(4.6, 5.0, -2.9);
+    g.add(topSign);
   }
   if (tier >= 3) {
     // proper station: longer canopy, second bay, reader board
@@ -148,11 +164,20 @@ export function StationScene({ stopId, tier }: { stopId: string; tier: number })
     const people: THREE.Group[] = [];
     const crowd = new THREE.Group();
     scene.add(crowd);
+    // pre-rolled jitter so each spot scatters naturally but stays put
+    const jitter = Array.from({ length: 24 }, () => ({
+      x: (Math.random() - 0.5) * 0.7,
+      z: (Math.random() - 0.5) * 0.5,
+    }));
     const seatOf = (i: number): [number, number] => {
-      // queue along the curb, then cluster back under the shelter
-      if (i < 6) return [-2.4 + i * 1.05, -0.9];
+      const j = jitter[i % jitter.length];
+      // loose knot near the curb, then milling around under the shelter
+      if (i < 6) return [-2.4 + i * 1.05 + j.x, -0.9 + j.z];
       const r = i - 6;
-      return [-2.8 + (r % 5) * 1.3 + (Math.floor(r / 5) % 2) * 0.5, -2.1 - Math.floor(r / 5) * 0.8];
+      return [
+        -2.8 + (r % 5) * 1.3 + (Math.floor(r / 5) % 2) * 0.5 + j.x,
+        -2.1 - Math.floor(r / 5) * 0.8 + j.z,
+      ];
     };
     const setCrowd = (n: number) => {
       const want = Math.max(0, Math.min(n, 22));
@@ -160,7 +185,7 @@ export function StationScene({ stopId, tier }: { stopId: string; tier: number })
         const p = makePerson(people.length);
         const [x, z] = seatOf(people.length);
         p.position.set(x, 0.12, z);
-        p.rotation.y = Math.random() * 0.9 - 0.45;
+        p.rotation.y = Math.random() * Math.PI * 2; // facing every which way
         crowd.add(p);
         people.push(p);
       }
@@ -179,9 +204,15 @@ export function StationScene({ stopId, tier }: { stopId: string; tier: number })
       const line = st.lines.find((l) => l.id === lineId) ?? st.lines[0];
       const mesh = makeBusMesh(
         line?.color ?? '#e5484d',
-        line?.modelId ?? 'citybus',
+        line ? lineRefModel(line) : 'citybus',
         st.companyColor,
       );
+      // up close the map bus reads washed-out: kill the emissive glow and
+      // let the scene's sun do the shading
+      mesh.traverse((o) => {
+        const mat = (o as THREE.Mesh).material as THREE.MeshLambertMaterial | undefined;
+        if (mat && 'emissiveIntensity' in mat) mat.emissiveIntensity = 0.12;
+      });
       mesh.position.set(-26, 0.1, 2.2);
       mesh.rotation.y = 0; // +x facing
       // curb-side door: a dark panel that slides open

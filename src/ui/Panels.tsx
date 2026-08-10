@@ -1,12 +1,13 @@
 import { useMemo, useRef } from 'react';
 import {
-  busModel, depotCapacity, driversNeeded, fleetAssigned, fleetOwned, fleetTotal,
-  gradeOf, useGame,
+  busModel, creditScore, depotCapacity, driversNeeded, fleetAssigned, fleetOwned,
+  fleetTotal, goodLoanOffer, gradeOf, lineRefModel, useGame,
 } from '../game/store';
 import {
-  BUSES_PER_MECHANIC, BUS_MODELS, CHARGERS_COST, DEPOT_CAPACITY,
+  BUSES_PER_MECHANIC, BUS_MODELS, CHARGERS_COST, creditBand, DEPOT_CAPACITY,
   DEPOT_UPGRADE_COST, DWELL_SEC, FLEET_TIER_NAMES, FLEET_UPGRADE_COST_SHARE,
-  LAYOVER_MIN, MAX_DEPOTS, MAX_WALK_M,
+  GOOD_LOAN_DAILY_RATE, GOOD_LOAN_MIN_SCORE, LAYOVER_MIN, MAX_DEPOTS, MAX_WALK_M,
+  STOP_TIER_MIN_LINES,
   DRIVER_WAGE_PER_HOUR, HEADWAY_CHOICES, LOAN_AMOUNT, LOAN_FEE, LOAN_PAYOFF,
   DAYS_PER_QUARTER, LOAN_INTEREST_PER_DAY, MECHANIC_WAGE_PER_DAY, nextDepotCost,
   quarterLabel, REFUEL_MIN, REFURB_COST_SHARE,
@@ -252,6 +253,7 @@ function LineEditPanel() {
   const allStops = useGame((s) => s.stops);
   const updateLine = useGame((s) => s.updateLine);
   const deleteLine = useGame((s) => s.deleteLine);
+  const setLineVehicles = useGame((s) => s.setLineVehicles);
   const setPanel = useGame((s) => s.setPanel);
 
   const line = lines.find((l) => l.id === id);
@@ -276,9 +278,7 @@ function LineEditPanel() {
     );
   }
   const st: LineStats | undefined = stats?.perLine.find((p) => p.lineId === line.id);
-  const model = busModel(line.modelId);
-  const freeOfModel =
-    fleetOwned(fleet, line.modelId) - fleetAssigned(lines, line.modelId);
+  const model = busModel(lineRefModel(line));
   const preview = cyclePreview(
     line.pathLenM, line.stopIds.length, model, line.stopBufferSec ?? 0,
   );
@@ -324,44 +324,40 @@ function LineEditPanel() {
       )}
 
       <div className="field">
-        <label>Bus model</label>
-        <div className="seg">
-          {BUS_MODELS.map((m) => (
-            <button
-              key={m.id}
-              className={line.modelId === m.id ? 'on' : ''}
-              disabled={fleetOwned(fleet, m.id) === 0 && line.modelId !== m.id}
-              title={`${m.name} — ${m.capacity} riders`}
-              onClick={() => updateLine(line.id, { modelId: m.id, vehicles: 0 })}
-            >
-              {m.short}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div className="field">
         <label>
-          Buses on line {st && st.vehiclesNeeded > 0 && (
+          Buses on line — {line.vehicles} total{' '}
+          {st && st.vehiclesNeeded > 0 && (
             <small className="dim">(need {st.vehiclesNeeded} for the timetable)</small>
           )}
         </label>
-        <div className="stepper">
-          <button
-            onClick={() => updateLine(line.id, { vehicles: Math.max(0, line.vehicles - 1) })}
-          >
-            −
-          </button>
-          <b>{line.vehicles}</b>
-          <button
-            disabled={freeOfModel <= 0}
-            title={freeOfModel <= 0 ? 'No unassigned buses of this model — buy more in Fleet' : ''}
-            onClick={() => updateLine(line.id, { vehicles: line.vehicles + 1 })}
-          >
-            +
-          </button>
-          <span className="dim">{freeOfModel} spare {model.short.toLowerCase()}</span>
-        </div>
+        {BUS_MODELS.map((m) => {
+          const owned = fleetOwned(fleet, m.id);
+          const here = line.vehiclesByModel?.[m.id] ?? 0;
+          if (owned === 0 && here === 0) return null;
+          const spare = owned - fleetAssigned(lines, m.id);
+          return (
+            <div key={m.id} className="stepper model-row">
+              <span className="model-name">{m.short}</span>
+              <button onClick={() => setLineVehicles(line.id, m.id, here - 1)}>−</button>
+              <b>{here}</b>
+              <button
+                disabled={spare <= 0}
+                title={
+                  spare <= 0
+                    ? 'No unassigned buses of this model — buy more in Fleet'
+                    : `Add a ${m.name}`
+                }
+                onClick={() => setLineVehicles(line.id, m.id, here + 1)}
+              >
+                +
+              </button>
+              <span className="dim">{spare} spare</span>
+            </div>
+          );
+        })}
+        <small className="dim">
+          Mix models freely — the slowest one sets the timetable.
+        </small>
       </div>
 
       <div className="field">
@@ -523,6 +519,7 @@ function LineEditPanel() {
  */
 function StopList({ lineId, stopIds }: { lineId: string; stopIds: string[] }) {
   const stops = useGame((s) => s.stops);
+  const allLines = useGame((s) => s.lines);
   const cash = useGame((s) => s.cash);
   const tool = useGame((s) => s.tool);
   const moveStopId = useGame((s) => s.moveStopId);
@@ -580,18 +577,29 @@ function StopList({ lineId, stopIds }: { lineId: string; stopIds: string[] }) {
                 <span className="dim">{STOP_TIER_NAMES[tier]}</span>
               )}
               {cost ? (
-                <button
-                  className="btn tiny"
-                  disabled={cash < cost}
-                  title={
-                    cash < cost
-                      ? `Need ${fmtMoney(cost)}`
-                      : `Upgrade to ${STOP_TIER_NAMES[next]?.toLowerCase()}`
-                  }
-                  onClick={() => upgradeStop(sid)}
-                >
-                  {STOP_TIER_NAMES[next]} · {fmtMoney(cost)}
-                </button>
+                (() => {
+                  const needLines = STOP_TIER_MIN_LINES[next];
+                  const linesAt = needLines
+                    ? allLines.filter((l) => l.stopIds.includes(sid)).length
+                    : 0;
+                  const gated = !!needLines && linesAt < needLines;
+                  return (
+                    <button
+                      className="btn tiny"
+                      disabled={cash < cost || gated}
+                      title={
+                        gated
+                          ? `${STOP_TIER_NAMES[next]} needs ${needLines}+ lines calling here (${linesAt} now)`
+                          : cash < cost
+                            ? `Need ${fmtMoney(cost)}`
+                            : `Upgrade to ${STOP_TIER_NAMES[next]?.toLowerCase()}`
+                      }
+                      onClick={() => upgradeStop(sid)}
+                    >
+                      {STOP_TIER_NAMES[next]} · {fmtMoney(cost)}
+                    </button>
+                  );
+                })()
               ) : (
                 <span className="dim">Max</span>
               )}
@@ -909,16 +917,37 @@ function StationPanel() {
         slips. Stick around: buses that call here pull up right in this view.
       </p>
       {nextCost ? (
-        <button
-          className="btn primary"
-          disabled={cash < nextCost}
-          title={cash < nextCost ? `Need ${fmtMoney(nextCost)}` : ''}
-          onClick={() => upgradeStop(stop.id)}
-        >
-          Upgrade to {STOP_TIER_NAMES[tier + 1]} ({fmtMoney(nextCost)})
-        </button>
+        (() => {
+          const needLines = STOP_TIER_MIN_LINES[tier + 1];
+          const gated = !!needLines && served.length < needLines;
+          return (
+            <>
+              <button
+                className="btn primary"
+                disabled={cash < nextCost || gated}
+                title={
+                  gated
+                    ? `${STOP_TIER_NAMES[tier + 1]} needs ${needLines}+ lines calling here`
+                    : cash < nextCost
+                      ? `Need ${fmtMoney(nextCost)}`
+                      : ''
+                }
+                onClick={() => upgradeStop(stop.id)}
+              >
+                Upgrade to {STOP_TIER_NAMES[tier + 1]} ({fmtMoney(nextCost)})
+              </button>
+              {gated && (
+                <p className="hint">
+                  {STOP_TIER_NAMES[tier + 1]}s are for busy interchanges — route at
+                  least {needLines} lines through here first ({served.length} now).
+                  Transfer Hubs make changing buses nearly instant.
+                </p>
+              )}
+            </>
+          );
+        })()
       ) : (
-        <p className="good">✓ Full station — top of the line.</p>
+        <p className="good">✓ Transfer Hub — the summit of bus infrastructure.</p>
       )}
     </>
   );
@@ -1202,6 +1231,11 @@ function FinancePanel() {
   const loanTaken = useGame((s) => s.loanTaken);
   const takeLoan = useGame((s) => s.takeLoan);
   const repayLoan = useGame((s) => s.repayLoan);
+  const goodLoan = useGame((s) => s.goodLoan);
+  const takeGoodLoan = useGame((s) => s.takeGoodLoan);
+  const repayGoodLoan = useGame((s) => s.repayGoodLoan);
+  const score = useGame(creditScore);
+  const offer = goodLoanOffer(score);
   const exportSave = useGame((s) => s.exportSave);
   const importSave = useGame((s) => s.importSave);
   const notify = useGame((s) => s.notify);
@@ -1240,6 +1274,59 @@ function FinancePanel() {
         Fuel is pumped at your depots — every kilometre a bus drives burns gas
         (or charge) paid from company cash.
       </p>
+      <div className="credit-box">
+        <div className="credit-head">
+          <span>Credit score</span>
+          <b className={score >= 640 ? 'good' : score >= 580 ? '' : 'bad'}>
+            {score} · {creditBand(score)}
+          </b>
+        </div>
+        <div className="score-bar credit-bar">
+          <i
+            className={score >= 640 ? 'good' : score >= 580 ? 'mid' : 'bad'}
+            style={{ width: `${((score - 300) / 550) * 100}%` }}
+          />
+        </div>
+        <small className="dim">
+          Built from cash on hand, profitability, your latest report card, fleet
+          upkeep — and whether Talon &amp; Grasp already own a piece of you.
+        </small>
+      </div>
+      <div className="loan-box good-bank">
+        <b>Harbor Mutual</b>
+        {goodLoan > 0 ? (
+          <>
+            <p className="hint">
+              You owe {fmtMoney(goodLoan)} at{' '}
+              {fmtMoney(goodLoan * GOOD_LOAN_DAILY_RATE)}/day interest. Repay at
+              face value whenever you like — no tricks.
+            </p>
+            <button
+              className="btn primary"
+              disabled={cash < goodLoan}
+              onClick={repayGoodLoan}
+            >
+              Repay {fmtMoney(goodLoan)}
+            </button>
+          </>
+        ) : offer > 0 ? (
+          <>
+            <p className="hint">
+              The bank that reads your file. At {score} credit they'll lend{' '}
+              {fmtMoney(offer)} at {fmtMoney(offer * GOOD_LOAN_DAILY_RATE)}/day —
+              repay at face value, one loan at a time.
+            </p>
+            <button className="btn primary with-icon" onClick={takeGoodLoan}>
+              <IconBank size={15} /> Borrow {fmtMoney(offer)}
+            </button>
+          </>
+        ) : (
+          <p className="hint">
+            They pull your file, wince at the {score}, and politely suggest you
+            come back above {GOOD_LOAN_MIN_SCORE}.
+          </p>
+        )}
+      </div>
       <p className="hint">
         Fixed costs (depot upkeep, mechanics, office, loan interest) are charged on top,
         spread over the day.

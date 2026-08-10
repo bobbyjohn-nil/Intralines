@@ -15,6 +15,19 @@ export interface LogEntry {
 
 export const CHANGELOG: LogEntry[] = [
   {
+    version: '1.15',
+    date: 'Aug 10, 2026',
+    title: 'Good credit, mixed fleets',
+    items: [
+      'Your company now has a credit score (300–850) built from cash, profitability, report cards, fleet condition and your banking history. The Finance tab shows it — and Harbor Mutual, a reputable bank, offers smaller, cheaper loans sized to your score. Keep borrowing from Talon Capital and your score pays for it.',
+      'Mixed fleets: a line can now run several bus models at once. The line editor lists every unlocked model with its own +/- stepper — mix a couple of Sparrows in with your Metros; the slowest model sets the timetable and the sim blends capacity, fuel and running costs per bus.',
+      'New bus: the Skyline Double-Decker — 130 riders on two floors, unlocks at 40,000 daily riders. And the Sparrow got a proper Ford-style cutaway-van body: van cab, box on the back.',
+      'Busy interchanges: a stop served by 3+ lines can now upgrade to a Tier 4 Interchange, and 5+ lines unlocks the Transfer Hub — the summit of bus infrastructure — with big capacity jumps and quick 2-minute transfers between lines.',
+      'The waiting-passenger counter is now a slim ring wrapped around the stop dot itself — it fills and shifts green → amber → red as the crowd builds, instead of a bubble floating over the map.',
+      'Station view polish: buses in the platform scene use the same clean liveried models as the map, and the waiting crowd stands naturally — scattered, turned every which way, all sizes.',
+    ],
+  },
+  {
     version: '1.14',
     date: 'Aug 5, 2026',
     title: 'Arterials take the strain',

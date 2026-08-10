@@ -14,6 +14,7 @@ import {
   MAX_WAIT_MIN,
   MODE_TAU,
   CAPTIVE_SHARE,
+  HUB_TRANSFER_PENALTY_MIN,
   REFUEL_MIN,
   STOP_TIER_CAPACITY,
   STOP_TIER_WALK_BONUS,
@@ -278,8 +279,12 @@ function computeNetwork(msg: NetworkMsg) {
     }
   }
 
-  // for each ordered line pair, one transfer point (cluster-aware)
-  const sharedStop = new Map<number, { posA: number; posB: number; walkMin: number }>();
+  // for each ordered line pair, one transfer point (cluster-aware). A
+  // Transfer Hub at the interchange makes changing buses nearly seamless.
+  const sharedStop = new Map<
+    number,
+    { posA: number; posB: number; walkMin: number; pen: number }
+  >();
   const pairKey = (a: number, b: number) => a * 1024 + b;
   const linesAtCluster = new Map<number, { li: number; pos: number; stopIdx: number }[]>();
   linesAtStop.forEach((servers, si) => {
@@ -297,9 +302,12 @@ function computeNetwork(msg: NetworkMsg) {
         if (s1.li === s2.li) continue;
         const k = pairKey(s1.li, s2.li);
         const walkMin = s1.stopIdx === s2.stopIdx ? 0 : 1.5;
+        const hub =
+          (stops[s1.stopIdx].tier ?? 1) >= 5 || (stops[s2.stopIdx].tier ?? 1) >= 5;
+        const pen = hub ? HUB_TRANSFER_PENALTY_MIN : TRANSFER_PENALTY_MIN;
         const prev = sharedStop.get(k);
-        if (!prev || walkMin < prev.walkMin) {
-          sharedStop.set(k, { posA: s1.pos, posB: s2.pos, walkMin });
+        if (!prev || walkMin + pen < prev.walkMin + prev.pen) {
+          sharedStop.set(k, { posA: s1.pos, posB: s2.pos, walkMin, pen });
         }
       }
     }
@@ -342,7 +350,7 @@ function computeNetwork(msg: NetworkMsg) {
                 a.walkMin +
                 waitA +
                 rideMin(la.li, la.pos, sh.posA) +
-                TRANSFER_PENALTY_MIN +
+                sh.pen +
                 sh.walkMin +
                 Math.min(lineCalc[lb.li].headwayForWait / 2, MAX_WAIT_MIN) +
                 rideMin(lb.li, sh.posB, lb.pos) +

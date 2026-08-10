@@ -14,6 +14,17 @@ export const LOAN_FEE = 50_000; // skimmed before the money arrives
 export const LOAN_INTEREST_PER_DAY = 2_300; // never amortizes
 export const LOAN_PAYOFF = 750_000; // the only way to make them go away
 
+// Harbor Mutual, the reputable bank: smaller loans, fair terms — but they
+// pull your credit score and size the offer accordingly.
+export const GOOD_LOAN_MAX = 400_000;
+export const GOOD_LOAN_MIN_SCORE = 580; // below this they politely decline
+export const GOOD_LOAN_DAILY_RATE = 0.0006; // interest per day on the balance
+/** short label for a score band */
+export function creditBand(score: number): string {
+  return score >= 780 ? 'Excellent' : score >= 700 ? 'Great' : score >= 640 ? 'Good'
+    : score >= 580 ? 'Fair' : score >= 500 ? 'Poor' : 'Dismal';
+}
+
 export const DEPOT_COST = 150_000;
 export const MAX_DEPOTS = 5; // city planning won't zone any more of them
 /** each additional depot costs 50% more — land gets scarce */
@@ -33,17 +44,30 @@ export const CHARGERS_COST = 120_000; // enables electric buses
 // shelter and a full station. Nicer stops feel closer/comfier, so they pull
 // riders from a little further out.
 export const STOP_COST = 4_000;
-export const STOP_UPGRADE_COST: Record<number, number> = { 2: 12_000, 3: 35_000 };
+export const STOP_UPGRADE_COST: Record<number, number> = {
+  2: 12_000, 3: 35_000, 4: 90_000, 5: 200_000,
+};
 export const STOP_TIER_NAMES: Record<number, string> = {
-  1: 'Sign stop', 2: 'Shelter', 3: 'Station',
+  1: 'Sign stop', 2: 'Shelter', 3: 'Station', 4: 'Interchange', 5: 'Transfer Hub',
 };
 /** perceived minutes shaved off the walk to a stop, by tier */
-export const STOP_TIER_WALK_BONUS: Record<number, number> = { 1: 0, 2: 0.8, 3: 1.8 };
+export const STOP_TIER_WALK_BONUS: Record<number, number> = {
+  1: 0, 2: 0.8, 3: 1.8, 4: 2.6, 5: 3.4,
+};
 /**
  * comfortable boardings/day by tier — past this a stop is overcrowded:
  * waiting riders spill off the curb, some give up, satisfaction drops.
  */
-export const STOP_TIER_CAPACITY: Record<number, number> = { 1: 250, 2: 700, 3: 1600 };
+export const STOP_TIER_CAPACITY: Record<number, number> = {
+  1: 250, 2: 700, 3: 1600, 4: 3500, 5: 8000,
+};
+/**
+ * big-hub tiers need the traffic to justify them: minimum number of lines
+ * calling at the stop before the upgrade is allowed.
+ */
+export const STOP_TIER_MIN_LINES: Record<number, number> = { 4: 3, 5: 5 };
+/** transfer penalty in minutes at a Transfer Hub (vs TRANSFER_PENALTY_MIN) */
+export const HUB_TRANSFER_PENALTY_MIN = 2;
 /** fastest road a bus stop may sit on — no stops on motorways/trunks */
 export const STOP_MAX_KMH = 55;
 
@@ -153,6 +177,20 @@ export const BUS_MODELS: BusModelSpec[] = [
     short: 'Artic',
     lengthFactor: 1.6,
     blurb: 'A bendy giant for your busiest corridors. Unlocks at 25k riders served.',
+  },
+  {
+    id: 'doubledeck',
+    name: 'Skyline Double-Decker',
+    capacity: 130,
+    price: 520_000,
+    costPerKm: 1.9,
+    fuelPerKm: 0.8,
+    tankKm: 400,
+    kmh: 22,
+    unlockRiders: 40_000,
+    short: 'DD',
+    lengthFactor: 1.05,
+    blurb: 'Two floors of riders on one bus length. Slow but mighty. Unlocks at 40k riders served.',
   },
   {
     id: 'electric',

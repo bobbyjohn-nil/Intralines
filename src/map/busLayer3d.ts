@@ -3,7 +3,7 @@ import { MercatorCoordinate } from 'maplibre-gl';
 import type { CustomLayerInterface, Map as MLMap } from 'maplibre-gl';
 import type { BusLine, LineStats, LngLat, Stop } from '../game/types';
 import { DWELL_SEC, isPeakHour, LAYOVER_MIN, trafficFactor } from '../game/constants';
-import { busModel } from '../game/store';
+import { busModel, lineModelList, lineRefModel } from '../game/store';
 import { pointAlong } from '../game/routing';
 
 // The living-city layer. Buses move with real kinematics (constant
@@ -339,7 +339,10 @@ export class BusLayer3D implements CustomLayerInterface {
     for (const line of lines) {
       const st = stats.find((s) => s.lineId === line.id);
       if (!st || !line.active || st.vehiclesUsed <= 0 || line.path.length < 2) continue;
-      const model = busModel(line.modelId);
+      // mixed fleets: the slowest assigned model sets the schedule; each
+      // vehicle renders as its own model
+      const model = busModel(lineRefModel(line));
+      const modelList = lineModelList(line);
       const segs: DriveSeg[] = [];
       let t = 0;
       for (let i = 1; i < line.stopIds.length; i++) {
@@ -357,7 +360,9 @@ export class BusLayer3D implements CustomLayerInterface {
       const cycleMin = 2 * outboundMin + 2 * LAYOVER_MIN;
       const meshes: THREE.Group[] = [];
       for (let k = 0; k < st.vehiclesUsed; k++) {
-        const g = makeBusMesh(line.color, model.id, this.brandColor);
+        const g = makeBusMesh(
+          line.color, modelList[k] ?? model.id, this.brandColor,
+        );
         g.visible = false;
         this.scene.add(g);
         meshes.push(g);
@@ -828,34 +833,76 @@ export function makeBusMesh(
     color: modelId === 'minibus' ? 0xffffff : 0xf5f2ea,
   });
 
-  const key = `body-${len}`;
-  let bodyGeo = bodyGeoCache.get(key);
-  if (!bodyGeo) {
-    bodyGeo = new THREE.BoxGeometry(len, 2.1, 2.6);
-    bodyGeoCache.set(key, bodyGeo);
-  }
-  const body = new THREE.Mesh(bodyGeo, bodyMat);
-  body.position.y = 1.55;
-  g.add(body);
-
-  // the line's color rides on a full-length stripe so routes stay
-  // tellable apart even though every bus wears the company paint
+  // the line's color rides on a stripe so routes stay tellable apart even
+  // though every bus wears the company paint
   const stripeColor = new THREE.Color(color);
   const stripeMat = new THREE.MeshLambertMaterial({
     color: stripeColor,
     emissive: stripeColor.clone().multiplyScalar(0.3),
   });
-  const stripe = new THREE.Mesh(new THREE.BoxGeometry(len - 0.2, 0.42, 2.68), stripeMat);
-  stripe.position.y = 1.05;
-  g.add(stripe);
 
-  const windows = new THREE.Mesh(new THREE.BoxGeometry(len - 0.6, 0.9, 2.64), glassMat);
-  windows.position.y = 2.35;
-  g.add(windows);
+  if (modelId === 'doubledeck') {
+    // two floors: tall body, two window bands, roof right at the top
+    const body = new THREE.Mesh(new THREE.BoxGeometry(len, 3.6, 2.6), bodyMat);
+    body.position.y = 2.3;
+    g.add(body);
+    const stripe = new THREE.Mesh(new THREE.BoxGeometry(len - 0.2, 0.42, 2.68), stripeMat);
+    stripe.position.y = 1.05;
+    g.add(stripe);
+    for (const wy of [2.3, 3.5]) {
+      const band = new THREE.Mesh(new THREE.BoxGeometry(len - 0.6, 0.85, 2.64), glassMat);
+      band.position.y = wy;
+      g.add(band);
+    }
+    const roof = new THREE.Mesh(new THREE.BoxGeometry(len - 0.4, 0.18, 2.4), roofMat);
+    roof.position.y = 4.2;
+    g.add(roof);
+  } else if (modelId === 'minibus') {
+    // cutaway-van shuttle: van cab and hood up front, box body behind
+    const box = new THREE.Mesh(new THREE.BoxGeometry(5.0, 2.3, 2.6), bodyMat);
+    box.position.set(-1.0, 1.6, 0);
+    g.add(box);
+    const cab = new THREE.Mesh(new THREE.BoxGeometry(1.4, 1.5, 2.1), bodyMat);
+    cab.position.set(2.2, 1.15, 0);
+    g.add(cab);
+    const hood = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.8, 2.0), bodyMat);
+    hood.position.set(3.05, 0.85, 0);
+    g.add(hood);
+    const stripe = new THREE.Mesh(new THREE.BoxGeometry(4.9, 0.4, 2.68), stripeMat);
+    stripe.position.set(-1.0, 1.05, 0);
+    g.add(stripe);
+    const windows = new THREE.Mesh(new THREE.BoxGeometry(4.5, 0.85, 2.64), glassMat);
+    windows.position.set(-1.0, 2.35, 0);
+    g.add(windows);
+    const cabGlass = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.7, 1.95), glassMat);
+    cabGlass.position.set(2.92, 1.62, 0);
+    g.add(cabGlass);
+    const roof = new THREE.Mesh(new THREE.BoxGeometry(4.8, 0.16, 2.4), roofMat);
+    roof.position.set(-1.0, 2.85, 0);
+    g.add(roof);
+  } else {
+    const key = `body-${len}`;
+    let bodyGeo = bodyGeoCache.get(key);
+    if (!bodyGeo) {
+      bodyGeo = new THREE.BoxGeometry(len, 2.1, 2.6);
+      bodyGeoCache.set(key, bodyGeo);
+    }
+    const body = new THREE.Mesh(bodyGeo, bodyMat);
+    body.position.y = 1.55;
+    g.add(body);
 
-  const roof = new THREE.Mesh(new THREE.BoxGeometry(len - 0.4, 0.18, 2.4), roofMat);
-  roof.position.y = 2.95;
-  g.add(roof);
+    const stripe = new THREE.Mesh(new THREE.BoxGeometry(len - 0.2, 0.42, 2.68), stripeMat);
+    stripe.position.y = 1.05;
+    g.add(stripe);
+
+    const windows = new THREE.Mesh(new THREE.BoxGeometry(len - 0.6, 0.9, 2.64), glassMat);
+    windows.position.y = 2.35;
+    g.add(windows);
+
+    const roof = new THREE.Mesh(new THREE.BoxGeometry(len - 0.4, 0.18, 2.4), roofMat);
+    roof.position.y = 2.95;
+    g.add(roof);
+  }
 
   if (modelId === 'artic') {
     // accordion joint between the two halves
@@ -883,9 +930,11 @@ export function makeBusMesh(
     g.add(flash);
   }
 
-  const windshield = new THREE.Mesh(new THREE.BoxGeometry(0.1, 1.3, 2.3), glassMat2);
-  windshield.position.set(len / 2 + 0.01, 1.9, 0);
-  g.add(windshield);
+  if (modelId !== 'minibus') {
+    const windshield = new THREE.Mesh(new THREE.BoxGeometry(0.1, 1.3, 2.3), glassMat2);
+    windshield.position.set(len / 2 + 0.01, 1.9, 0);
+    g.add(windshield);
+  }
 
   const headMat = new THREE.MeshLambertMaterial({
     color: 0xfff2c0, emissive: 0xfff2c0, emissiveIntensity: 1,
@@ -909,7 +958,10 @@ export function makeBusMesh(
   }
 
   const wheelGeo = new THREE.CylinderGeometry(0.55, 0.55, 0.35, 10);
-  const wheelXs = modelId === 'artic' ? [-6.4, -2.2, 2.2, 6.4] : [-len / 2 + 1.4, len / 2 - 1.4];
+  const wheelXs =
+    modelId === 'artic' ? [-6.4, -2.2, 2.2, 6.4]
+    : modelId === 'minibus' ? [-2.4, 2.2]
+    : [-len / 2 + 1.4, len / 2 - 1.4];
   for (const wx of wheelXs) {
     for (const wz of [-1.15, 1.15]) {
       const w = new THREE.Mesh(wheelGeo, wheelMat);

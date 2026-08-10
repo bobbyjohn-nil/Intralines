@@ -990,6 +990,32 @@ button.chip:hover {
   border: 1px solid rgba(0, 0, 0, 0.25);
 }
 
+/* ---------- credit score & the good bank ---------- */
+
+.credit-box {
+  background: #fff;
+  border: 1px solid rgba(60, 55, 40, 0.14);
+  border-radius: 10px;
+  padding: 10px 12px;
+  margin: 10px 0;
+}
+
+.credit-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 13px;
+  margin-bottom: 6px;
+}
+
+.credit-bar {
+  margin-bottom: 6px;
+}
+
+.loan-box.good-bank {
+  border-color: rgba(47, 158, 68, 0.45);
+}
+
 /* ---------- compact timetable selectors ---------- */
 
 .select-row {
