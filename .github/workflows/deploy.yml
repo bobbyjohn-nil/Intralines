@@ -3,9 +3,12 @@ name: Deploy to GitHub Pages
 on:
   push:
     branches:
+      # ONLY branches the github-pages environment actually allows belong
+      # here. A run on any other branch is rejected at the environment gate in
+      # about two seconds — but it still joins the `pages` concurrency group
+      # below and cancels the real deploy on its way out.
       - main
       - claude/city-bus-manager-game-rmdul2
-      - claude/bus-appearance-update-stability-rnemi4
   workflow_dispatch:
 
 permissions:

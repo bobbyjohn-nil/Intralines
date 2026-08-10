@@ -35,6 +35,12 @@ Without (2) the run fails in about two seconds with no steps and no logs —
 that is GitHub rejecting the branch, not a build error. After any deploy,
 check the run actually succeeded before reporting the work as shipped.
 
+Do NOT add a branch to (1) that is not allowed by (2), and do not push the
+same commit to two listed branches at once. The workflow's concurrency group
+is `pages` with `cancel-in-progress: true`, so a doomed run started a second
+later cancels the deploy that was going to work. A cancelled run looks like
+somebody else's problem and is usually this.
+
 Changing `src/game/data/pipeline.js` or
 `scripts/bake-city.mjs` invalidates the CI city-pack cache and re-bakes
 Worcester, Des Moines and Madison (slower deploy). Bump
