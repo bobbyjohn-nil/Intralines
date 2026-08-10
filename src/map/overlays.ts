@@ -11,6 +11,22 @@ import type { ExpressionSpecification } from 'maplibre-gl';
 
 export type HeatMode = 'pop' | 'dest' | 'modes';
 
+/** roughly how many demand dots a city should carry, whatever its size */
+const TARGET_DOTS = 2600;
+/** no single block group may carpet the map */
+const MAX_DOTS_PER_BG = 40;
+
+/** deterministic 0..1 from an integer — the scatter must not move on redraw */
+function hash01(x: number): number {
+  let h = Math.imul(x ^ (x >>> 16), 0x45d9f3b);
+  h = Math.imul(h ^ (h >>> 16), 0x45d9f3b);
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+}
+
+function cosLatOf(pack: CityPack): number {
+  return Math.cos((pack.meta.center[1] * Math.PI) / 180);
+}
+
 /** dot colors for the travel-mode view (dominant mode per block group) */
 export const MODE_COLORS: Record<string, { fill: string; stroke: string; label: string }> = {
   car: { fill: '#8a8f98', stroke: '#5c6068', label: 'Driving' },
@@ -101,32 +117,55 @@ export function ensureOverlays(map: MLMap): void {
   const addSrc = (id: string) => {
     if (!map.getSource(id)) map.addSource(id, { type: 'geojson', data: EMPTY });
   };
-  ['heatmap-src', 'lines-src', 'stops-src', 'draft-src', 'draft-cursor-src', 'depot-src'].forEach(
-    addSrc,
-  );
+  if (!map.getSource('heatmap-src')) {
+    // Clustering is what lets the layer be scattered up close and calm from
+    // afar: zoomed in you see the individual scatter, and as you pull back
+    // MapLibre merges neighbours into one blob carrying their combined weight.
+    map.addSource('heatmap-src', {
+      type: 'geojson',
+      data: EMPTY,
+      cluster: true,
+      clusterRadius: 40,
+      // above this the scatter stands on its own; at or below it, neighbours
+      // merge — which is the wide view people are used to
+      clusterMaxZoom: 13,
+      clusterProperties: { wsum: ['+', ['get', 'w']] },
+    });
+  }
+  ['lines-src', 'stops-src', 'draft-src', 'draft-cursor-src', 'depot-src'].forEach(addSrc);
 
   if (!map.getLayer('heatmap-blob')) {
     // crisp demand dots over block-group centroids, drawn ABOVE the basemap
     // (roads and buildings included) but beneath the game's own line/stop
     // overlays added after this. Fill stays lightly translucent so streets
     // show through; the solid outline keeps the shape rigid.
-    const f: ExpressionSpecification = ['+', 0.45, ['get', 'w']]; // 0.45..1.45
+    // A merged blob carries the summed weight of everything inside it, damped
+    // so a dense downtown does not swell into one enormous circle. Individual
+    // dots stay small — thousands of them are the texture, not the subject.
+    const merged: ExpressionSpecification = [
+      'min', 4.2, ['sqrt', ['coalesce', ['get', 'wsum'], 1]],
+    ] as ExpressionSpecification;
     map.addLayer({
       id: 'heatmap-blob',
       type: 'circle',
       source: 'heatmap-src',
       paint: {
+        // The zoom interpolation has to be the outermost expression — a
+        // ['zoom'] nested inside a ['case'] is rejected and the whole layer
+        // silently fails to build — so the cluster/point split lives in each
+        // stop instead.
         'circle-radius': [
-          'interpolate', ['exponential', 1.7], ['zoom'],
-          10, ['*', 3.5, f],
-          13, ['*', 9, f],
-          16, ['*', 24, f],
+          'interpolate', ['exponential', 1.6], ['zoom'],
+          10, ['case', ['has', 'point_count'], ['*', 3.2, merged], 1.8],
+          13, ['case', ['has', 'point_count'], ['*', 6.5, merged], 2.8],
+          15, ['case', ['has', 'point_count'], ['*', 11, merged], 4.2],
+          17, ['case', ['has', 'point_count'], ['*', 16, merged], 6],
         ],
         'circle-color': HEAT_COLORS.pop.fill,
-        'circle-opacity': 0.3,
+        'circle-opacity': ['case', ['has', 'point_count'], 0.3, 0.55],
         'circle-stroke-color': HEAT_COLORS.pop.stroke,
-        'circle-stroke-width': 1.6,
-        'circle-stroke-opacity': 0.95,
+        'circle-stroke-width': ['case', ['has', 'point_count'], 1.6, 0.6],
+        'circle-stroke-opacity': ['case', ['has', 'point_count'], 0.95, 0.5],
       },
     });
   }
@@ -336,26 +375,46 @@ export function updateHeatmap(
     return;
   }
 
-  // one dot per census block group, sized by how dense that kind of demand is
+  // A scatter, not a single dot per block group: each dot stands for a few
+  // hundred people, sprinkled across the area they actually live or work in.
+  // Up close that reads as texture — you can see a corridor thin out street by
+  // street — and the source's clustering merges it back into blobs as you pull
+  // away, so the wide view looks much as it always did.
   const value = (bg: CityPack['blockGroups'][number]): number =>
     mode === 'pop' ? bg.pop : bg.jobs + (bg.air ?? 0) + (bg.rail ?? 0);
-  const dens = pack.blockGroups.map((bg) => value(bg) / Math.max(bg.areaKm2, 0.02));
-  const positive = dens.filter((d) => d > 0).sort((a, b) => a - b);
-  const norm = positive[Math.floor(positive.length * 0.92)] || 1;
-  // people live everywhere, so the residents layer keeps a low floor; the
-  // destination layer cuts harder so scattered corner-store jobs don't paint
-  // whole residential neighborhoods as somewhere worth going.
-  const cut = mode === 'pop' ? 0.03 : 0.12;
-  const features = pack.blockGroups.flatMap((bg, i) => {
-    const rel = dens[i] / norm;
-    if (rel < cut) return [];
-    return [
-      {
-        type: 'Feature' as const,
-        properties: { w: Math.pow(Math.min(rel, 1), 0.75), bg: i },
-        geometry: { type: 'Point' as const, coordinates: bg.centroid },
-      },
-    ];
+  const values = pack.blockGroups.map(value);
+  const total = values.reduce((a, b) => a + b, 0);
+  // aim for a few thousand dots whatever the city's size
+  const perDot = Math.max(40, total / TARGET_DOTS);
+  const features: {
+    type: 'Feature';
+    properties: { w: number; bg: number };
+    geometry: { type: 'Point'; coordinates: LngLat };
+  }[] = [];
+  pack.blockGroups.forEach((bg, i) => {
+    const dots = Math.min(MAX_DOTS_PER_BG, Math.round(values[i] / perDot));
+    if (dots < 1) return;
+    // a block group's own footprint, so dots land inside the neighbourhood
+    // rather than in a fixed blob around its centre
+    const spread = Math.sqrt(Math.max(bg.areaKm2, 0.02)) * 0.0045;
+    for (let k = 0; k < dots; k++) {
+      // hashed, not random: the scatter must be identical on every redraw
+      const h1 = hash01(i * 7919 + k * 104729);
+      const h2 = hash01(i * 15485863 + k * 32452843);
+      const r = Math.sqrt(h1) * spread;
+      const a = h2 * Math.PI * 2;
+      features.push({
+        type: 'Feature',
+        properties: { w: 0.5, bg: i },
+        geometry: {
+          type: 'Point',
+          coordinates: [
+            bg.centroid[0] + (r * Math.cos(a)) / Math.max(cosLatOf(pack), 0.2),
+            bg.centroid[1] + r * Math.sin(a),
+          ],
+        },
+      });
+    }
   });
   if (map.getLayer('heatmap-blob')) {
     map.setPaintProperty('heatmap-blob', 'circle-color', HEAT_COLORS[mode].fill);

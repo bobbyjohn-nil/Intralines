@@ -330,12 +330,16 @@ export function buildRealStyle(): StyleSpecification {
         layout: {
           'text-font': ['Noto Sans Regular'],
           'text-field': ['get', 'name'],
-          'text-size': 12,
+          // District names were a flat 12px at every zoom, so at z11 — where a
+          // screen holds a dozen of them — they were the loudest thing on the
+          // map. They now shrink with the view and step back in weight.
+          'text-size': ['interpolate', ['linear'], ['zoom'], 11, 8.5, 13, 11, 15, 13],
           'text-transform': 'uppercase',
-          'text-letter-spacing': 0.08,
+          'text-letter-spacing': ['interpolate', ['linear'], ['zoom'], 11, 0.04, 14, 0.08],
         },
         paint: {
           'text-color': '#8a7f63',
+          'text-opacity': ['interpolate', ['linear'], ['zoom'], 11, 0.6, 13.5, 1],
           'text-halo-color': PALETTE.labelHalo,
           'text-halo-width': 1.4,
         },

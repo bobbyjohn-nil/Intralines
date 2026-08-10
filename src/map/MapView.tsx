@@ -147,11 +147,26 @@ export function MapView({ pack }: { pack: CityPack }) {
         addBoundaryMask(map, pack.meta.bbox);
         ensureOverlays(map);
         map.addLayer(busLayer);
+        // DOM markers keep their pixel size at every zoom, which makes a depot
+        // look enormous over a city-wide view. Publish the zoom as a variable
+        // and let CSS shrink them back.
+        const syncMarkerScale = (): void => {
+          const m = mapRef.current;
+          if (!m) return;
+          const z = m.getZoom();
+          const scale = Math.max(0.45, Math.min(1, (z - 9.5) / 3.5));
+          m.getContainer().style.setProperty('--marker-scale', scale.toFixed(3));
+        };
+        syncMarkerScale();
+        map.on('zoom', syncMarkerScale);
         // airports + rail stations: fixed landmarks with their own demand
         for (const poi of pack.pois ?? []) {
           const el = document.createElement('div');
-          el.className = `poi-marker poi-${poi.kind}`;
-          el.innerHTML =
+          el.className = 'marker-scale';
+          const inner = document.createElement('div');
+          inner.className = `poi-marker poi-${poi.kind}`;
+          el.appendChild(inner);
+          inner.innerHTML =
             poi.kind === 'airport'
               ? '<svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor">' +
                 '<path d="M21 15.5v-2l-8-4.5V4a1.5 1.5 0 0 0-3 0v5L2 13.5v2l8-2.2v4.9l-2.2 1.6v1.7l3.7-1 3.7 1v-1.7L13 18.2v-4.9z"/></svg>'
@@ -159,7 +174,7 @@ export function MapView({ pack }: { pack: CityPack }) {
                 '<rect x="5" y="3" width="14" height="13" rx="3"/>' +
                 '<path d="M5 10h14M9 19l-2 2.5M15 19l2 2.5"/>' +
                 '<circle cx="9" cy="13" r="0.6"/><circle cx="15" cy="13" r="0.6"/></svg>';
-          el.title = poi.name;
+          inner.title = poi.name;
           poiMarkersRef.current.push(
             new maplibregl.Marker({ element: el, anchor: 'center' })
               .setLngLat(poi.pt)
@@ -654,13 +669,16 @@ export function MapView({ pack }: { pack: CityPack }) {
         if (label && label.textContent !== d.name) label.textContent = d.name;
         continue;
       }
+      // MapLibre writes its positioning transform onto the marker's own
+      // element, so the scaling lives on a child it will not touch
       const el = document.createElement('div');
-      el.className = 'depot-marker';
+      el.className = 'marker-scale';
       el.innerHTML =
+        '<div class="depot-marker">' +
         '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" ' +
         'stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">' +
         '<path d="M3 10l9-6 9 6v10h-4v-7H7v7H3z"/><path d="M7 20v-3h10v3"/></svg>' +
-        '<span class="depot-name"></span>';
+        '<span class="depot-name"></span></div>';
       el.querySelector('.depot-name')!.textContent = d.name;
       markers.set(
         d.id,

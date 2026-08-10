@@ -1359,6 +1359,19 @@ button.chip:hover {
 
 /* ---------- depot marker ---------- */
 
+.marker-scale {
+  /* MapLibre owns this element's transform for positioning; the scale goes on
+     the child so the two never fight */
+  display: grid;
+  place-items: center;
+}
+
+.marker-scale > * {
+  transform: scale(var(--marker-scale, 1));
+  transform-origin: center bottom;
+  transition: transform 120ms linear;
+}
+
 .depot-marker {
   color: #2c2a24;
   display: grid;
