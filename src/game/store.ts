@@ -93,6 +93,8 @@ export interface GameState {
   moveStopId: string | null;
   /** stop shown in the station viewer panel */
   selectedStopId: string | null;
+  /** stop row being hovered in the line editor (map glow) */
+  hoverStopId: string | null;
 
   // actions
   openCity: (pack: CityPack) => void;
@@ -116,6 +118,7 @@ export interface GameState {
   finishDraft: () => void;
   selectLine: (id: string | null) => void;
   selectStop: (id: string | null) => void;
+  setHoverStop: (id: string | null) => void;
   updateLine: (id: string, patch: Partial<BusLine>) => void;
   deleteLine: (id: string) => void;
   buyBus: (modelId: string) => void;
@@ -227,8 +230,7 @@ const clamp100 = (v: number) => Math.max(0, Math.min(100, Math.round(v)));
 let zoneCity: string | null = null;
 let zoneMedianPopD = 0;
 
-/** does the land around this point pass depot zoning? */
-function depotZoningOk(pack: CityPack, pt: LngLat): boolean {
+function zoneMedian(pack: CityPack): number {
   if (zoneCity !== pack.meta.id) {
     const ds = pack.blockGroups
       .filter((b) => b.pop > 0)
@@ -237,6 +239,26 @@ function depotZoningOk(pack: CityPack, pt: LngLat): boolean {
     zoneMedianPopD = ds[Math.floor(ds.length / 2)] ?? 0;
     zoneCity = pack.meta.id;
   }
+  return zoneMedianPopD;
+}
+
+function bgIndustrial(
+  bg: CityPack['blockGroups'][number],
+  medianPopD: number,
+): boolean {
+  const popD = bg.pop / Math.max(bg.areaKm2, 0.02);
+  return bg.jobs > bg.pop && popD < medianPopD;
+}
+
+/** every block group where depot zoning would approve (for the map tint) */
+export function industrialZones(pack: CityPack): CityPack['blockGroups'] {
+  const median = zoneMedian(pack);
+  return pack.blockGroups.filter((bg) => bgIndustrial(bg, median));
+}
+
+/** does the land around this point pass depot zoning? */
+function depotZoningOk(pack: CityPack, pt: LngLat): boolean {
+  const median = zoneMedian(pack);
   const cosLat = Math.cos((pack.meta.center[1] * Math.PI) / 180);
   let best: CityPack['blockGroups'][number] | null = null;
   let bestM = Infinity;
@@ -248,8 +270,7 @@ function depotZoningOk(pack: CityPack, pt: LngLat): boolean {
     }
   }
   if (!best || bestM > 900) return false; // unzoned wilderness
-  const popD = best.pop / Math.max(best.areaKm2, 0.02);
-  return best.jobs > best.pop && popD < zoneMedianPopD;
+  return bgIndustrial(best, median);
 }
 
 /** the Transit Authority's quarterly grading rubric */
@@ -461,6 +482,7 @@ export const useGame = create<GameState>((set, get) => {
             pathLenM: l.pathLenM,
             headwayMin: l.headwayMin,
             peakHeadwayMin: l.peakHeadwayMin ?? l.headwayMin,
+            stopBufferSec: l.stopBufferSec ?? 0,
             firstHour: l.firstHour,
             lastHour: l.lastHour,
             fare: l.fare,
@@ -531,6 +553,7 @@ export const useGame = create<GameState>((set, get) => {
     menuError: null,
     moveStopId: null,
     selectedStopId: null,
+    hoverStopId: null,
 
     openCity: (pack) => {
       worker?.terminate();
@@ -585,10 +608,11 @@ export const useGame = create<GameState>((set, get) => {
               cash: sv.cash,
               clockMin: sv.clockMin,
               stops: sv.stops,
-              // saves from before time-of-day frequencies
+              // saves from before time-of-day frequencies / stop buffers
               lines: sv.lines.map((l) => ({
                 ...l,
                 peakHeadwayMin: l.peakHeadwayMin ?? l.headwayMin,
+                stopBufferSec: l.stopBufferSec ?? 0,
               })),
               depots,
               staff: sv.staff,
@@ -1094,6 +1118,7 @@ export const useGame = create<GameState>((set, get) => {
         pathLenM: acc,
         headwayMin: 15,
         peakHeadwayMin: 8,
+        stopBufferSec: 0,
         firstHour: 6,
         lastHour: 22,
         fare: 2.25,
@@ -1137,6 +1162,8 @@ export const useGame = create<GameState>((set, get) => {
 
     selectStop: (id) =>
       set({ selectedStopId: id, panel: id ? 'station' : 'none' }),
+
+    setHoverStop: (id) => set({ hoverStopId: id }),
 
     updateLine: (id, patch) => {
       set((s) => ({ lines: s.lines.map((l) => (l.id === id ? { ...l, ...patch } : l)) }));

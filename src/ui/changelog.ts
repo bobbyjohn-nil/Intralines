@@ -15,6 +15,18 @@ export interface LogEntry {
 
 export const CHANGELOG: LogEntry[] = [
   {
+    version: '1.14',
+    date: 'Aug 5, 2026',
+    title: 'Arterials take the strain',
+    items: [
+      'Traffic got real: congestion now follows road class — commuters funnel onto arterials and highways, which crawl at rush hour (worst downtown), while local side streets stay passable even in the core. Bus corridors, the traffic forecast overlay and your running times all use the new model, so routing around the arterials is now a genuine strategy.',
+      'Buffer time: every line has a per-stop schedule padding setting (0–45s). Padding slows the timetable slightly but soaks up traffic delays — the punctuality fix for lines that run chronically late.',
+      'Placing a depot now tints every zone where zoning will approve it in green, so you can see the industrial land before you click.',
+      'The line editor slimmed down: rush/off-peak/buffer and service hours are compact dropdowns now, the line’s stops show their names on the map while you edit, and hovering a stop in the list lights it up on the map.',
+      'Station view runs on game time: the bus pull-in animation matches your speed setting, freezes on pause, and the platform crowd (and its counter) clears the moment the bus pulls away.',
+    ],
+  },
+  {
     version: '1.13',
     date: 'Aug 5, 2026',
     title: 'Step inside the station',

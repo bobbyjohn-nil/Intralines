@@ -174,6 +174,22 @@ export function ensureOverlays(map: MLMap): void {
       paint: { 'line-color': '#000', 'line-opacity': 0.001, 'line-width': 18 },
     });
   }
+  if (!map.getLayer('stop-glow')) {
+    // hover halo behind the stop dot (filtered to one stop at a time)
+    map.addLayer({
+      id: 'stop-glow',
+      type: 'circle',
+      source: 'stops-src',
+      filter: ['==', ['get', 'id'], '___none'],
+      paint: {
+        'circle-radius': ['interpolate', ['linear'], ['zoom'], 12, 10, 16, 18],
+        'circle-color': '#ffd43b',
+        'circle-opacity': 0.5,
+        'circle-stroke-color': '#f08c00',
+        'circle-stroke-width': 3,
+      },
+    });
+  }
   if (!map.getLayer('stops-pt')) {
     map.addLayer({
       id: 'stops-pt',
@@ -432,7 +448,7 @@ export function updateDraftCursor(map: MLMap, from: LngLat | null, to: LngLat | 
 // from how urban its surroundings are and whether it's a main road — the
 // same recipe the bus animation uses to slow buses down.
 
-import { trafficFactor } from '../game/constants';
+import { congestionGain, trafficFactor } from '../game/constants';
 
 let trafficFeatures: GeoJSON.Feature[] | null = null;
 let trafficCity: string | null = null;
@@ -467,7 +483,7 @@ function buildTrafficFeatures(pack: CityPack): GeoJSON.Feature[] {
     const b = pack.nodes[e.b];
     if (!a || !b) continue;
     const mid: LngLat = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
-    const gain = urbanAt(mid) * (1.2 + 1.2 * (e.kmh >= 42 ? 1 : 0.4)) + 0.08;
+    const gain = congestionGain(e.kmh, urbanAt(mid));
     feats.push({
       type: 'Feature',
       properties: { gain: Math.round(gain * 100) / 100 },
@@ -533,6 +549,65 @@ export function updateTraffic(
     1.35, '#ee7c1b',
     1.55, '#dd3d3d',
   ]);
+}
+
+/** glow one stop on the map (hovered in the line editor); null clears */
+export function updateStopHover(map: MLMap, stopId: string | null): void {
+  if (!map.getLayer('stop-glow')) return;
+  map.setFilter('stop-glow', ['==', ['get', 'id'], stopId ?? '___none']);
+}
+
+/**
+ * Depot-placement zoning tint: paints the block groups where zoning will
+ * approve a depot. Pass null to hide.
+ */
+export function updateZoning(
+  map: MLMap,
+  zones: { rings: LngLat[][] }[] | null,
+): void {
+  if (!map.getSource('zoning-src')) {
+    map.addSource('zoning-src', { type: 'geojson', data: EMPTY });
+  }
+  if (!map.getLayer('zoning-fill')) {
+    const before = map.getLayer('lines-halo') ? 'lines-halo' : undefined;
+    map.addLayer(
+      {
+        id: 'zoning-fill',
+        type: 'fill',
+        source: 'zoning-src',
+        paint: { 'fill-color': '#2f9e44', 'fill-opacity': 0.18 },
+      },
+      before,
+    );
+    map.addLayer(
+      {
+        id: 'zoning-line',
+        type: 'line',
+        source: 'zoning-src',
+        paint: {
+          'line-color': '#1e7030',
+          'line-width': 1.4,
+          'line-opacity': 0.55,
+          'line-dasharray': [2, 1.6],
+        },
+      },
+      before,
+    );
+  }
+  setData(
+    map,
+    'zoning-src',
+    zones && zones.length
+      ? {
+          type: 'FeatureCollection',
+          features: zones.map((z) => ({
+            type: 'Feature' as const,
+            properties: {},
+            geometry: { type: 'Polygon' as const, coordinates: [z.rings[0]] },
+          })),
+        }
+      : EMPTY,
+  );
 }
 
 export function updateDepots(map: MLMap, pts: LngLat[]): void {

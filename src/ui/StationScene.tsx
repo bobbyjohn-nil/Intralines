@@ -3,6 +3,9 @@ import * as THREE from 'three';
 import { makeBusMesh } from '../map/busLayer3d';
 import { useGame } from '../game/store';
 
+/** visit length in real ms per speed setting — faster game, snappier stop */
+const VISIT_MS_BY_SPEED = [5200, 2600, 1300];
+
 // The station diorama: a little 3D slice of curb with the stop's actual
 // tier of furniture, a crowd that mirrors the live waiting count, and —
 // when a bus serves this stop while you watch — a full pull-in: doors open,
@@ -13,7 +16,8 @@ const WALKER_COLORS = [0xc94f4f, 0x3d6fb3, 0x4a9455, 0xb3873d, 0x7a5cb3, 0x37858
 interface BusVisit {
   mesh: THREE.Group;
   door: THREE.Mesh;
-  start: number; // performance.now() ms
+  /** 0..1 progress — advanced per-frame so pause freezes it mid-scene */
+  t: number;
 }
 
 function makePerson(i: number): THREE.Group {
@@ -169,7 +173,6 @@ export function StationScene({ stopId, tier }: { stopId: string; tier: number })
     // bus visit animation state
     let visit: BusVisit | null = null;
     let lastServedSeen: number | null = null;
-    const VISIT_MS = 5200;
     const beginVisit = (lineId: string | null) => {
       if (visit) return;
       const st = useGame.getState();
@@ -189,13 +192,16 @@ export function StationScene({ stopId, tier }: { stopId: string; tier: number })
       door.position.set(1.6, 1.15, -1.36);
       mesh.add(door);
       scene.add(mesh);
-      visit = { mesh, door, start: performance.now() };
+      visit = { mesh, door, t: 0 };
     };
 
-    const stepVisit = (now: number) => {
+    const stepVisit = (dtMs: number) => {
       if (!visit) return;
-      const t = (now - visit.start) / VISIT_MS;
-      const { mesh, door } = visit;
+      const st = useGame.getState();
+      if (!st.paused) {
+        visit.t += dtMs / (VISIT_MS_BY_SPEED[st.speedIdx] ?? 5200);
+      }
+      const { mesh, door, t } = visit;
       if (t >= 1) {
         scene.remove(mesh);
         visit = null;

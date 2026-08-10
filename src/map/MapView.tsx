@@ -2,17 +2,17 @@ import { useEffect, useRef } from 'react';
 import maplibregl, { Map as MLMap, MapMouseEvent, StyleSpecification } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import type { CityPack, LngLat } from '../game/types';
-import { useGame } from '../game/store';
+import { industrialZones, useGame } from '../game/store';
 import { buildPackStyle, buildRealStyle, PALETTE } from './basemapStyle';
 import {
   addBoundaryMask, ensureOverlays, MODE_COLORS, updateDepots, updateDraft, updateDraftCursor,
-  updateHeatmap, updateNetwork, updateTraffic,
+  updateHeatmap, updateNetwork, updateStopHover, updateTraffic, updateZoning,
 } from './overlays';
 import { BusLayer3D } from './busLayer3d';
 import type { LineExtras } from './busLayer3d';
 import { cumulativeDist } from '../game/routing';
 import { fastDistM } from '../game/geo';
-import { DEPOT_CAPACITY } from '../game/constants';
+import { congestionGain, DEPOT_CAPACITY } from '../game/constants';
 
 /** quick probe: can we actually reach the tile server? */
 async function tilesReachable(): Promise<boolean> {
@@ -262,27 +262,32 @@ export function MapView({ pack }: { pack: CityPack }) {
           }
         }
 
-        // station name labels: zoomed right in, or forced on via Map options
+        // station name labels: zoomed right in, forced on via Map options,
+        // or — while a line's editor is open — that line's own stops
         const st = useGame.getState();
         const labelsOn =
           st.stopLabels === 'always' ? zoomNow >= 11.5 : zoomNow >= 15.5;
+        const editedLine =
+          st.panel === 'line-edit' || st.tool === 'route-edit'
+            ? st.lines.find((l) => l.id === st.selectedLineId)
+            : undefined;
+        const lineStopIds = new Set(editedLine?.stopIds ?? []);
         const labels = labelsRef.current;
         const wanted = new Set<string>();
-        if (labelsOn) {
-          for (const stop of st.stops) {
-            wanted.add(stop.id);
-            let m = labels.get(stop.id);
-            if (!m) {
-              const el = document.createElement('div');
-              el.className = 'stop-label';
-              m = new maplibregl.Marker({ element: el, anchor: 'top', offset: [0, 8] })
-                .setLngLat(stop.pt)
-                .addTo(map!);
-              labels.set(stop.id, m);
-            }
-            const el = m.getElement();
-            if (el.textContent !== stop.name) el.textContent = stop.name;
+        for (const stop of st.stops) {
+          if (!labelsOn && !lineStopIds.has(stop.id)) continue;
+          wanted.add(stop.id);
+          let m = labels.get(stop.id);
+          if (!m) {
+            const el = document.createElement('div');
+            el.className = 'stop-label';
+            m = new maplibregl.Marker({ element: el, anchor: 'top', offset: [0, 8] })
+              .setLngLat(stop.pt)
+              .addTo(map!);
+            labels.set(stop.id, m);
           }
+          const el = m.getElement();
+          if (el.textContent !== stop.name) el.textContent = stop.name;
         }
         for (const [id, m] of labels) {
           if (!wanted.has(id)) {
@@ -437,6 +442,7 @@ export function MapView({ pack }: { pack: CityPack }) {
       const ds: number[] = [];
       let urbanSum = 0;
       let mainCnt = 0;
+      let gainSum = 0;
       let samples = 0;
       let lastSample = -1e9;
       const nearBg = new Set<number>();
@@ -450,9 +456,12 @@ export function MapView({ pack }: { pack: CityPack }) {
         if (l.cum[i] - lastSample >= 250 || i === 0) {
           lastSample = l.cum[i];
           samples++;
-          urbanSum += Math.min(cellScan(pnt, nearBg) / densNorm, 1);
+          const urbanHere = Math.min(cellScan(pnt, nearBg) / densNorm, 1);
+          urbanSum += urbanHere;
           const kmh = g.speedNear(pnt, 60);
           if (kmh !== null && kmh >= 42) mainCnt++;
+          // rush hour lives on the arterials: class-dominant congestion
+          gainSum += congestionGain(kmh ?? 30, urbanHere);
         }
       }
       // riders along this corridor who would otherwise drive are off the
@@ -475,6 +484,7 @@ export function MapView({ pack }: { pack: CityPack }) {
         intersections: ds,
         urban: samples ? urbanSum / samples : 0.5,
         mainShare: samples ? mainCnt / samples : 0.5,
+        gain: samples ? gainSum / samples : 0.5,
         relief,
       };
       // deadheads: every vehicle is garaged at the closest depot to the
@@ -697,6 +707,21 @@ export function MapView({ pack }: { pack: CityPack }) {
       panel === 'depot' || tool === 'depot-place',
     );
   }, [panel, tool]);
+
+  // depot placement: tint the industrial zones where zoning will approve
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !readyRef.current) return;
+    updateZoning(map, tool === 'depot-place' ? industrialZones(pack) : null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tool, pack]);
+
+  // glow the stop whose row is hovered in the line editor
+  const hoverStopId = useGame((s) => s.hoverStopId);
+  useEffect(() => {
+    const map = mapRef.current;
+    if (map && readyRef.current) updateStopHover(map, hoverStopId);
+  }, [hoverStopId]);
 
   return <div ref={divRef} className="map-root" />;
 }

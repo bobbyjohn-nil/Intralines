@@ -37,6 +37,7 @@ interface WLine {
   pathLenM: number;
   headwayMin: number;
   peakHeadwayMin: number;
+  stopBufferSec: number;
   firstHour: number;
   lastHour: number;
   fare: number;
@@ -141,8 +142,10 @@ function computeNetwork(msg: NetworkMsg) {
 
   // per-line derived numbers
   const lineCalc = lines.map((l) => {
+    const bufferSec = l.stopBufferSec ?? 0;
     const rideMinFull =
-      (l.pathLenM / 1000 / l.kmh) * 60 + (l.stopIds.length - 2) * (DWELL_SEC / 60);
+      (l.pathLenM / 1000 / l.kmh) * 60 +
+      (l.stopIds.length - 2) * ((DWELL_SEC + bufferSec) / 60);
     // refuel time at the depot, amortized over the day's driving: a bus
     // that burns half a tank per round trip loses half a fill-up of time
     const cycleKm = (2 * l.pathLenM) / 1000;
@@ -160,9 +163,12 @@ function computeNetwork(msg: NetworkMsg) {
     // Passengers check the timetable and reach the stop just before the
     // bus is due — but traffic makes buses run late, and every late
     // minute is a minute they stand there fuming. A minority still shows
-    // up unplanned and waits roughly half a headway.
+    // up unplanned and waits roughly half a headway. Buffer time written
+    // into the timetable at each stop soaks up delay before riders feel it.
+    const bufferSlackMin =
+      (Math.max(l.stopIds.length - 2, 0) * bufferSec * 0.8) / 60;
     const delayAt = (h: number) =>
-      Math.max(0, rideMinFull * (trafficFactor(h) - 1) * 0.6);
+      Math.max(0, rideMinFull * (trafficFactor(h) - 1) * 0.6 - bufferSlackMin);
     const waitAtHour = (h: number) =>
       0.7 * Math.min(2 + delayAt(h), MAX_WAIT_MIN) +
       0.3 * Math.min(effAt(h) / 2, MAX_WAIT_MIN);

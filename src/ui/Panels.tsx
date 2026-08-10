@@ -39,9 +39,11 @@ export function cyclePreview(
   pathLenM: number,
   stopCount: number,
   model: { kmh: number; tankKm: number },
+  stopBufferSec = 0,
 ): { cycleMin: number; cycleKm: number } {
   const rideMin =
-    (pathLenM / 1000 / model.kmh) * 60 + Math.max(0, stopCount - 2) * (DWELL_SEC / 60);
+    (pathLenM / 1000 / model.kmh) * 60 +
+    Math.max(0, stopCount - 2) * ((DWELL_SEC + stopBufferSec) / 60);
   const cycleKm = (2 * pathLenM) / 1000;
   const refuelMin = model.tankKm > 0 ? (cycleKm / model.tankKm) * REFUEL_MIN : 0;
   return {
@@ -277,7 +279,9 @@ function LineEditPanel() {
   const model = busModel(line.modelId);
   const freeOfModel =
     fleetOwned(fleet, line.modelId) - fleetAssigned(lines, line.modelId);
-  const preview = cyclePreview(line.pathLenM, line.stopIds.length, model);
+  const preview = cyclePreview(
+    line.pathLenM, line.stopIds.length, model, line.stopBufferSec ?? 0,
+  );
   const cycleShown = st ? st.cycleMin : preview.cycleMin;
   const refuels = st?.refuelsPerDay ?? 0;
 
@@ -361,58 +365,72 @@ function LineEditPanel() {
       </div>
 
       <div className="field">
-        <label>
-          Rush-hour frequency: every {line.peakHeadwayMin ?? line.headwayMin} min{' '}
-          <small className="dim">(07–09 &amp; 16–18)</small>
-        </label>
-        <div className="seg wrap">
-          {HEADWAY_CHOICES.map((h) => (
-            <button
-              key={h}
-              className={(line.peakHeadwayMin ?? line.headwayMin) === h ? 'on' : ''}
-              onClick={() => updateLine(line.id, { peakHeadwayMin: h })}
+        <label>Timetable</label>
+        <div className="select-row">
+          <label className="mini-select">
+            Rush
+            <select
+              value={line.peakHeadwayMin ?? line.headwayMin}
+              onChange={(e) => updateLine(line.id, { peakHeadwayMin: +e.target.value })}
             >
-              {h}
-            </button>
-          ))}
-        </div>
-      </div>
-      <div className="field">
-        <label>
-          Off-peak frequency: every {line.headwayMin} min{' '}
-          <small className="dim">(rest of the day)</small>
-        </label>
-        <div className="seg wrap">
-          {HEADWAY_CHOICES.map((h) => (
-            <button
-              key={h}
-              className={line.headwayMin === h ? 'on' : ''}
-              onClick={() => updateLine(line.id, { headwayMin: h })}
+              {HEADWAY_CHOICES.map((h) => (
+                <option key={h} value={h}>every {h} min</option>
+              ))}
+            </select>
+          </label>
+          <label className="mini-select">
+            Off-peak
+            <select
+              value={line.headwayMin}
+              onChange={(e) => updateLine(line.id, { headwayMin: +e.target.value })}
             >
-              {h}
-            </button>
-          ))}
+              {HEADWAY_CHOICES.map((h) => (
+                <option key={h} value={h}>every {h} min</option>
+              ))}
+            </select>
+          </label>
+          <label className="mini-select">
+            Buffer
+            <select
+              value={line.stopBufferSec ?? 0}
+              onChange={(e) => updateLine(line.id, { stopBufferSec: +e.target.value })}
+            >
+              {[0, 10, 20, 30, 45].map((b) => (
+                <option key={b} value={b}>{b}s / stop</option>
+              ))}
+            </select>
+          </label>
         </div>
+        <small className="dim">
+          Rush hours are 07–09 &amp; 16–18. Buffer is timetable padding that soaks
+          up traffic delays.
+        </small>
       </div>
 
       <div className="field">
-        <label>
-          Service {String(line.firstHour).padStart(2, '0')}:00 –{' '}
-          {String(line.lastHour).padStart(2, '0')}:00
-        </label>
-        <div className="range-pair">
-          <input
-            type="range" min={0} max={12} value={line.firstHour}
+        <label>Service hours</label>
+        <div className="select-row">
+          <select
+            value={line.firstHour}
             onChange={(e) =>
               updateLine(line.id, { firstHour: Math.min(+e.target.value, line.lastHour - 1) })
             }
-          />
-          <input
-            type="range" min={12} max={24} value={line.lastHour}
+          >
+            {Array.from({ length: 13 }, (_, h) => (
+              <option key={h} value={h}>{String(h).padStart(2, '0')}:00</option>
+            ))}
+          </select>
+          <span className="dim">to</span>
+          <select
+            value={line.lastHour}
             onChange={(e) =>
               updateLine(line.id, { lastHour: Math.max(+e.target.value, line.firstHour + 1) })
             }
-          />
+          >
+            {Array.from({ length: 13 }, (_, i) => i + 12).map((h) => (
+              <option key={h} value={h}>{String(h).padStart(2, '0')}:00</option>
+            ))}
+          </select>
         </div>
       </div>
 
@@ -513,6 +531,7 @@ function StopList({ lineId, stopIds }: { lineId: string; stopIds: string[] }) {
   const removeStopFromLine = useGame((s) => s.removeStopFromLine);
   const requestMoveStop = useGame((s) => s.requestMoveStop);
   const setTool = useGame((s) => s.setTool);
+  const setHoverStop = useGame((s) => s.setHoverStop);
   const editing = tool === 'route-edit';
   const crowdedById = new Map((crowdedStops ?? []).map((c) => [c.stopId, c]));
   const crowdedHere = stopIds.filter((sid) => crowdedById.has(sid)).length;
@@ -540,7 +559,12 @@ function StopList({ lineId, stopIds }: { lineId: string; stopIds: string[] }) {
           const movingThis = moveStopId === sid;
           const crowd = crowdedById.get(sid);
           return (
-            <div key={sid} className={`stop-row ${movingThis ? 'moving' : ''}`}>
+            <div
+              key={sid}
+              className={`stop-row ${movingThis ? 'moving' : ''}`}
+              onMouseEnter={() => setHoverStop(sid)}
+              onMouseLeave={() => setHoverStop(null)}
+            >
               <span className="stop-row-idx">{i + 1}</span>
               <span className="stop-row-name" title={st.name}>{st.name}</span>
               {crowd ? (

@@ -138,6 +138,11 @@ export interface BusLine {
   headwayMin: number;
   /** rush-hour headway (7-9 & 16-18); defaults to headwayMin on old saves */
   peakHeadwayMin: number;
+  /**
+   * schedule padding at every stop, seconds. Slows the timetable but
+   * absorbs traffic delays, keeping buses punctual.
+   */
+  stopBufferSec: number;
   firstHour: number;
   lastHour: number;
   fare: number;

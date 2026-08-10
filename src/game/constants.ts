@@ -198,6 +198,19 @@ const TRAFFIC_ANCHORS: [number, number][] = [
   [21, 1.0], [24, 0.9],
 ];
 
+/**
+ * How strongly a stretch of road feels rush hour. Road class dominates —
+ * commuter traffic funnels onto arterials and highways, so they jam hard,
+ * while local streets stay passable even downtown. Urban surroundings
+ * scale the effect (a downtown arterial crawls; a country highway just
+ * thickens a little).
+ */
+export function congestionGain(kmh: number, urban: number): number {
+  const classWeight =
+    kmh >= 70 ? 1.35 : kmh >= 42 ? 1.15 : kmh >= 35 ? 0.55 : 0.18;
+  return classWeight * (0.35 + 0.65 * Math.min(Math.max(urban, 0), 1));
+}
+
 export function trafficFactor(hour: number): number {
   const h = ((hour % 24) + 24) % 24;
   for (let i = 1; i < TRAFFIC_ANCHORS.length; i++) {

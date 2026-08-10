@@ -39,6 +39,8 @@ export interface LineExtras {
   urban: number;
   /** 0..1 — share of the corridor on main roads (>= 42 km/h) */
   mainShare: number;
+  /** class-aware rush-hour sensitivity averaged along the corridor */
+  gain?: number;
   /** street route from the depot to the line's first stop (deadhead) */
   depotPath?: { path: LngLat[]; cum: number[]; lenM: number };
   /**
@@ -365,8 +367,9 @@ export class BusLayer3D implements CustomLayerInterface {
       const mainShare = ex?.mainShare ?? 0.5;
       // where the line runs decides how bad traffic gets: downtown arterials
       // grind to a near-standstill at rush hour, rural side streets barely
-      // notice it
-      const gain = urban * (1.2 + 1.2 * mainShare) + 0.08;
+      // notice it. Class-aware gain from the corridor samples when
+      // available: arterials feel rush hour, side streets shrug it off.
+      const gain = ex?.gain ?? urban * (1.2 + 1.2 * mainShare) + 0.08;
       const relief = ex?.relief ?? 1;
       const congAt = (hour: number): number => {
         const base = trafficFactor(hour);
