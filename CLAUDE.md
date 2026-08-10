@@ -24,7 +24,18 @@ At the end of every working session, cut exactly ONE new version:
 ## Deployment
 
 Pushing to the designated branch deploys to GitHub Pages via
-`.github/workflows/deploy.yml`. Changing `src/game/data/pipeline.js` or
+`.github/workflows/deploy.yml`. TWO things gate this, and both must be
+done or the push silently changes nothing that players can see:
+
+1. the branch must be listed under `on.push.branches` in the workflow, and
+2. the branch must be allowed by the `github-pages` **environment**
+   (repo Settings → Environments → github-pages → Deployment branches).
+
+Without (2) the run fails in about two seconds with no steps and no logs —
+that is GitHub rejecting the branch, not a build error. After any deploy,
+check the run actually succeeded before reporting the work as shipped.
+
+Changing `src/game/data/pipeline.js` or
 `scripts/bake-city.mjs` invalidates the CI city-pack cache and re-bakes
 Worcester, Des Moines and Madison (slower deploy). Bump
 `PACK_FORMAT_VERSION` in `src/game/data/idb.ts` whenever pack contents
