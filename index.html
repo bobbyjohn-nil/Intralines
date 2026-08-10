@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Intralines Bus Simulator</title>
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='0.9em' font-size='90'>🚌</text></svg>" />
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect x='6' y='18' width='88' height='54' rx='14' fill='%232c2a24'/><rect x='15' y='28' width='20' height='17' rx='4' fill='%23ffe9a8'/><rect x='40' y='28' width='20' height='17' rx='4' fill='%23ffe9a8'/><rect x='65' y='28' width='20' height='17' rx='4' fill='%23ffe9a8'/><rect x='15' y='52' width='70' height='7' rx='3.5' fill='%23e0533d'/><circle cx='28' cy='78' r='10' fill='%232c2a24'/><circle cx='28' cy='78' r='4' fill='%23bdb49a'/><circle cx='72' cy='78' r='10' fill='%232c2a24'/><circle cx='72' cy='78' r='4' fill='%23bdb49a'/></svg>" />
     <script>
       // Boot safety net. Two jobs:
       // 1) After a deploy, a cached copy of this page can reference hashed
@@ -64,12 +64,42 @@
             location.reload();
           };
           document.getElementById('il-clear').onclick = function () {
+            // clear the store CONTENTS and wait for the transaction to
+            // commit before reloading — a fire-and-forget deleteDatabase
+            // gets blocked by open connections and aborted by the reload,
+            // leaving the cache intact
+            var done = false;
+            var finish = function () {
+              if (done) return;
+              done = true;
+              location.reload();
+            };
+            setTimeout(finish, 2500); // never leave the player stuck
             try {
-              indexedDB.deleteDatabase('intralines');
+              var req = indexedDB.open('intralines', 1);
+              req.onupgradeneeded = function () {
+                if (!req.result.objectStoreNames.contains('cityPacks')) {
+                  req.result.createObjectStore('cityPacks');
+                }
+              };
+              req.onsuccess = function () {
+                var db = req.result;
+                try {
+                  var tx = db.transaction('cityPacks', 'readwrite');
+                  tx.objectStore('cityPacks').clear();
+                  tx.oncomplete = function () { db.close(); finish(); };
+                  tx.onabort = finish;
+                  tx.onerror = finish;
+                } catch (err) {
+                  db.close();
+                  finish();
+                }
+              };
+              req.onerror = finish;
+              req.onblocked = finish;
             } catch (err) {
-              /* ignore */
+              finish();
             }
-            location.reload();
           };
         }, 4000);
       })();
@@ -81,7 +111,7 @@
          other asset fails to load. Hidden the moment the app renders. -->
     <div id="boot-splash">
       <div class="bs-card">
-        <div class="bs-bus">🚌</div>
+        <div class="bs-bus"><svg width="46" height="46" viewBox="0 0 100 100" aria-hidden="true"><rect x="6" y="18" width="88" height="54" rx="14" fill="#2c2a24"/><rect x="15" y="28" width="20" height="17" rx="4" fill="#ffe9a8"/><rect x="40" y="28" width="20" height="17" rx="4" fill="#ffe9a8"/><rect x="65" y="28" width="20" height="17" rx="4" fill="#ffe9a8"/><rect x="15" y="52" width="70" height="7" rx="3.5" fill="#e0533d"/><circle cx="28" cy="78" r="10" fill="#2c2a24"/><circle cx="28" cy="78" r="4" fill="#bdb49a"/><circle cx="72" cy="78" r="10" fill="#2c2a24"/><circle cx="72" cy="78" r="4" fill="#bdb49a"/></svg></div>
         <b>Intralines</b>
         <span>Loading the city…</span>
         <div class="bs-bar"><i></i></div>

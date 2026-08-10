@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { CITIES } from '../game/data/cities';
 import { loadCity } from '../game/data/loadCity';
-import { idbDeletePack, idbGetPack } from '../game/data/idb';
+import { idbClearAllPacks, idbDeletePack, idbGetPack } from '../game/data/idb';
 import { SAVE_KEY_PREFIX } from '../game/constants';
+import { reportError } from '../game/errors';
 import { useGame } from '../game/store';
 import type { CityMeta, SaveGame } from '../game/types';
 import { BusSide, IconUpload } from './icons';
@@ -82,6 +83,7 @@ export function Menu() {
     } catch (e) {
       // eslint-disable-next-line no-console
       console.error('city load failed', e);
+      reportError('load', e, `${meta.name} failed to load.`);
       setLoading('');
       setError(
         `${meta.name} failed to load — ${(e as Error).message}. ` +
@@ -420,8 +422,8 @@ function SettingsTab({
               }
               for (const c of CITIES) {
                 localStorage.removeItem(SAVE_KEY_PREFIX + c.id);
-                if (c.kind === 'real') await idbDeletePack(c.id);
               }
+              await idbClearAllPacks();
               setCached(() => ({}));
               refreshSaves();
             }}

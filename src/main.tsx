@@ -1,8 +1,11 @@
 import { createRoot } from 'react-dom/client';
 import App from './App';
+import { ErrorBoundary, ErrorCenter } from './ui/ErrorCenter';
+import { installGlobalErrorHandlers } from './game/errors';
 import { migrateLocalStorage } from './game/migrate';
 import './styles.css';
 
+installGlobalErrorHandlers();
 migrateLocalStorage();
 
 // the app booted, so the stale-deploy reload guard can re-arm
@@ -13,7 +16,12 @@ try {
 }
 
 // No StrictMode: the MapLibre map + WebGL bus layer must not double-mount.
-createRoot(document.getElementById('root')!).render(<App />);
+createRoot(document.getElementById('root')!).render(
+  <ErrorBoundary>
+    <App />
+    <ErrorCenter />
+  </ErrorBoundary>,
+);
 
 // the CSS sibling rule hides the boot splash once #root has content; remove
 // it outright as well (after the first real render) so no stacking-context

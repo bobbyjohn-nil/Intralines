@@ -3,6 +3,7 @@ import maplibregl, { Map as MLMap, MapMouseEvent, StyleSpecification } from 'map
 import 'maplibre-gl/dist/maplibre-gl.css';
 import type { CityPack, LngLat } from '../game/types';
 import { industrialZones, useGame } from '../game/store';
+import { reportError } from '../game/errors';
 import { buildPackStyle, buildRealStyle, PALETTE } from './basemapStyle';
 import {
   addBoundaryMask, ensureOverlays, MODE_COLORS, updateDepots, updateDraft, updateDraftCursor,
@@ -109,6 +110,24 @@ export function MapView({ pack }: { pack: CityPack }) {
       map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'bottom-right');
       map.touchZoomRotate.enableRotation();
       mapRef.current = map;
+
+      // surface real map failures without letting per-tile noise flood the
+      // log: report each distinct message once, cap at a handful per mount
+      const mapErrSeen = new Set<string>();
+      map.on('error', (ev) => {
+        const msg = String(ev?.error?.message ?? ev?.error ?? 'map error')
+          .replace(/https?:\/\/\S+/g, '<url>');
+        if (mapErrSeen.has(msg) || mapErrSeen.size >= 5) return;
+        mapErrSeen.add(msg);
+        reportError('map', ev?.error ?? msg);
+      });
+      map.on('webglcontextlost', () => {
+        reportError(
+          'map',
+          'WebGL context lost',
+          'Graphics hiccup — the browser dropped the 3D map. Reload to bring it back.',
+        );
+      });
 
       const busLayer = new BusLayer3D(() => {
         const { clockRef } = useGame.getState();

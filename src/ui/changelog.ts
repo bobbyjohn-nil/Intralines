@@ -15,6 +15,18 @@ export interface LogEntry {
 
 export const CHANGELOG: LogEntry[] = [
   {
+    version: '1.16',
+    date: 'Aug 10, 2026',
+    title: 'When things go wrong, you’ll know',
+    items: [
+      'A proper error message system: anything that breaks — the game, the map, the passenger simulation, saving, city downloads — now pops a readable red toast explaining what happened in plain language, with the technical details one click away. A small ⚠ badge keeps a session error log you can copy when reporting a problem.',
+      'If the interface ever crashes outright, you get a recovery screen with Reload, Clear-cache and Copy-error buttons instead of a frozen or blank page. Your save is never touched.',
+      '“Clear map cache” now actually clears the map cache. It used to fire the delete and reload before the browser finished (or even started) it — the cache survived every time. All clear buttons (recovery screen, Settings, the reset in the danger zone) now wait for the wipe to finish and are verified to leave zero cached data behind.',
+      'Storage-full save failures are no longer silent: the game tells you saving stopped working and what to do about it.',
+      'The bus emoji is gone from the browser tab — replaced with a proper little drawn bus icon (the loading screen matches).',
+    ],
+  },
+  {
     version: '1.15',
     date: 'Aug 10, 2026',
     title: 'Good credit, mixed fleets',

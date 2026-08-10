@@ -18,6 +18,7 @@ import {
 } from './constants';
 import { RoadGraph, cumulativeDist } from './routing';
 import { fastDistM } from './geo';
+import { reportError } from './errors';
 
 export interface DraftLeg {
   path: LngLat[];
@@ -154,6 +155,7 @@ export interface GameState {
 }
 
 let worker: Worker | null = null;
+let saveFailureReported = false;
 let reqSeq = 0;
 let recomputeTimer: ReturnType<typeof setTimeout> | null = null;
 let noticeSeq = 0;
@@ -176,6 +178,16 @@ function makeWorker(pack: CityPack, onStats: (stats: NetworkStats) => void): Wor
   });
   w.onmessage = (ev) => {
     if (ev.data.type === 'stats' && ev.data.reqId === reqSeq) onStats(ev.data.stats);
+  };
+  w.onerror = (ev) => {
+    reportError(
+      'simulation',
+      ev.message || 'demand worker crashed',
+      'The passenger simulation hit an error — ridership numbers may be stale. Reload if they stop updating.',
+    );
+  };
+  w.onmessageerror = () => {
+    reportError('simulation', 'demand worker message could not be decoded');
   };
   return w;
 }
@@ -1752,8 +1764,18 @@ export const useGame = create<GameState>((set, get) => {
       };
       try {
         localStorage.setItem(SAVE_KEY_PREFIX + s.pack.meta.id, JSON.stringify(sv));
-      } catch {
-        // storage full — ignore
+        saveFailureReported = false;
+      } catch (e) {
+        // the error bus dedupes repeats, but autosave fires constantly —
+        // only re-report after a save has succeeded again in between
+        if (!saveFailureReported) {
+          saveFailureReported = true;
+          reportError(
+            'save',
+            e,
+            'Saving failed — browser storage is full. Clear old city data or saves in Settings, then keep playing; the game will retry automatically.',
+          );
+        }
       }
     },
 

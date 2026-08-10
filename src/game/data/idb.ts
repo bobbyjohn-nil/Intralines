@@ -15,8 +15,13 @@ function open(name: string): Promise<IDBDatabase> {
         req.result.createObjectStore(STORE);
       }
     };
-    req.onsuccess = () => resolve(req.result);
+    req.onsuccess = () => {
+      // never hold a delete/upgrade hostage: close when another context asks
+      req.result.onversionchange = () => req.result.close();
+      resolve(req.result);
+    };
     req.onerror = () => reject(req.error);
+    req.onblocked = () => reject(new Error('database blocked'));
   });
 }
 
@@ -77,15 +82,19 @@ export async function idbGetPack<T>(id: string): Promise<T | null> {
   try {
     await ensureMigrated();
     const db = await open(DB_NAME);
-    return await new Promise((resolve) => {
-      const tx = db.transaction(STORE, 'readonly');
-      const req = tx.objectStore(STORE).get(id);
-      req.onsuccess = () => {
-        const v = req.result;
-        resolve(v && v.formatVersion === PACK_FORMAT_VERSION ? (v.pack as T) : null);
-      };
-      req.onerror = () => resolve(null);
-    });
+    try {
+      return await new Promise((resolve) => {
+        const tx = db.transaction(STORE, 'readonly');
+        const req = tx.objectStore(STORE).get(id);
+        req.onsuccess = () => {
+          const v = req.result;
+          resolve(v && v.formatVersion === PACK_FORMAT_VERSION ? (v.pack as T) : null);
+        };
+        req.onerror = () => resolve(null);
+      });
+    } finally {
+      db.close();
+    }
   } catch {
     return null;
   }
@@ -95,12 +104,16 @@ export async function idbPutPack(id: string, pack: unknown): Promise<void> {
   try {
     await ensureMigrated();
     const db = await open(DB_NAME);
-    await new Promise<void>((resolve) => {
-      const tx = db.transaction(STORE, 'readwrite');
-      tx.objectStore(STORE).put({ formatVersion: PACK_FORMAT_VERSION, pack }, id);
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => resolve();
-    });
+    try {
+      await new Promise<void>((resolve) => {
+        const tx = db.transaction(STORE, 'readwrite');
+        tx.objectStore(STORE).put({ formatVersion: PACK_FORMAT_VERSION, pack }, id);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => resolve();
+      });
+    } finally {
+      db.close();
+    }
   } catch {
     // cache is best-effort
   }
@@ -110,13 +123,45 @@ export async function idbDeletePack(id: string): Promise<void> {
   try {
     await ensureMigrated();
     const db = await open(DB_NAME);
-    await new Promise<void>((resolve) => {
-      const tx = db.transaction(STORE, 'readwrite');
-      tx.objectStore(STORE).delete(id);
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => resolve();
-    });
+    try {
+      await new Promise<void>((resolve) => {
+        const tx = db.transaction(STORE, 'readwrite');
+        tx.objectStore(STORE).delete(id);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => resolve();
+      });
+    } finally {
+      db.close();
+    }
   } catch {
     // ignore
+  }
+}
+
+/**
+ * Wipe every cached city pack and report whether the store is really empty
+ * afterwards. Clears the store contents (which works even while other tabs
+ * hold connections) rather than deleting the database, and only resolves
+ * once the transaction has committed — so callers can safely reload after.
+ */
+export async function idbClearAllPacks(): Promise<boolean> {
+  try {
+    await ensureMigrated();
+    const db = await open(DB_NAME);
+    try {
+      return await new Promise<boolean>((resolve) => {
+        const tx = db.transaction(STORE, 'readwrite');
+        const store = tx.objectStore(STORE);
+        store.clear();
+        const count = store.count();
+        tx.oncomplete = () => resolve(count.result === 0);
+        tx.onabort = () => resolve(false);
+        tx.onerror = () => resolve(false);
+      });
+    } finally {
+      db.close();
+    }
+  } catch {
+    return false;
   }
 }

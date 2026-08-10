@@ -682,6 +682,196 @@ button.chip:hover {
   color: #fff;
 }
 
+/* ---------- error message system ---------- */
+
+.error-toasts {
+  position: fixed;
+  top: 64px;
+  right: 14px;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 380px;
+}
+
+.error-toast {
+  background: #fffdf6;
+  border: 1px solid #e8b4b4;
+  border-left: 4px solid #c92a2a;
+  border-radius: 10px;
+  box-shadow: 0 6px 20px rgba(50, 40, 20, 0.3);
+  padding: 10px 12px;
+  font-size: 13px;
+  color: #2c2a24;
+}
+
+.error-toast .et-head {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.error-toast .et-icon {
+  color: #c92a2a;
+  font-size: 15px;
+  line-height: 1.3;
+}
+
+.error-toast .et-text {
+  flex: 1;
+  line-height: 1.45;
+}
+
+.error-toast .et-x {
+  border: none;
+  background: none;
+  font-size: 16px;
+  cursor: pointer;
+  color: rgba(44, 42, 36, 0.55);
+  padding: 0 2px;
+}
+
+.et-details {
+  border: none;
+  background: none;
+  color: #8a5a2c;
+  font-size: 11.5px;
+  cursor: pointer;
+  padding: 4px 0 0;
+  text-decoration: underline;
+}
+
+.et-pre {
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: #f3edda;
+  border-radius: 7px;
+  padding: 7px 9px;
+  font-size: 11px;
+  max-height: 140px;
+  overflow: auto;
+  margin: 6px 0 0;
+}
+
+.error-badge {
+  position: fixed;
+  bottom: 14px;
+  left: 14px;
+  z-index: 60;
+  border: 1px solid #e8b4b4;
+  background: #fffdf6;
+  color: #c92a2a;
+  font-weight: 700;
+  font-size: 12.5px;
+  border-radius: 999px;
+  padding: 6px 12px;
+  cursor: pointer;
+  box-shadow: 0 3px 12px rgba(50, 40, 20, 0.25);
+}
+
+.error-log {
+  position: fixed;
+  bottom: 52px;
+  left: 14px;
+  z-index: 61;
+  width: min(440px, calc(100vw - 28px));
+  max-height: min(480px, 70vh);
+  overflow-y: auto;
+  background: #fffdf6;
+  border: 1px solid rgba(60, 55, 40, 0.2);
+  border-radius: 12px;
+  box-shadow: 0 10px 34px rgba(50, 40, 20, 0.35);
+  padding: 12px 14px;
+  font-size: 13px;
+  color: #2c2a24;
+}
+
+.error-log .el-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.error-log .el-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.error-log .el-actions button {
+  border: 1px solid rgba(60, 55, 40, 0.25);
+  background: #fff;
+  border-radius: 7px;
+  font-size: 11.5px;
+  padding: 4px 8px;
+  cursor: pointer;
+}
+
+.error-log .el-hint {
+  font-size: 11.5px;
+  opacity: 0.65;
+  margin: 6px 0 10px;
+}
+
+.error-log .el-row {
+  border-top: 1px solid rgba(60, 55, 40, 0.12);
+  padding: 8px 0;
+}
+
+.error-log .el-meta {
+  font-size: 11px;
+  opacity: 0.55;
+}
+
+.error-log .el-friendly {
+  margin: 2px 0;
+  line-height: 1.4;
+}
+
+.fatal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  background: #f3edda;
+  font-family: inherit;
+}
+
+.fatal-card {
+  max-width: 560px;
+  width: calc(100vw - 40px);
+  background: #fffdf6;
+  border: 1px solid #d0c7ae;
+  border-radius: 14px;
+  padding: 24px;
+  color: #2c2a24;
+  box-shadow: 0 12px 40px rgba(50, 40, 20, 0.3);
+}
+
+.fatal-card h2 {
+  margin: 0 0 8px;
+}
+
+.fatal-card p {
+  margin: 0 0 12px;
+  opacity: 0.78;
+  line-height: 1.5;
+}
+
+.fatal-card .et-pre {
+  max-height: 180px;
+}
+
+.fatal-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 14px;
+  flex-wrap: wrap;
+}
+
 /* ---------- Talon & Grasp Savings ---------- */
 
 .loan-box {
