@@ -47,6 +47,10 @@ function versionedBoot() {
       (function () {
         var FALLBACK = ${JSON.stringify(assets)};
         var done = false;
+        // A controlled page is already guaranteed a matching set by the
+        // service worker, so skip the lookup entirely and boot straight away.
+        var controlled =
+          !!(navigator.serviceWorker && navigator.serviceWorker.controller);
         function load(a) {
           if (done) return;
           done = true;
@@ -61,6 +65,10 @@ function versionedBoot() {
           s.type = 'module';
           s.src = new URL((a && a.js) || FALLBACK.js, document.baseURI).href;
           document.head.appendChild(s);
+        }
+        if (controlled) {
+          load(FALLBACK);
+          return;
         }
         // Never let a slow or hanging network hold the game hostage. The
         // baked-in names are right whenever the page came from the current
@@ -94,8 +102,107 @@ function versionedBoot() {
         join(options.dir ?? 'dist', 'version.json'),
         `${JSON.stringify({ build: BUILD_ID, assets })}\n`,
       );
+      writeFileSync(join(options.dir ?? 'dist', 'sw.js'), serviceWorker(BUILD_ID, assets));
     },
   };
+}
+
+/**
+ * The service worker, generated with this build's exact file list.
+ *
+ * This is what makes an update reliable rather than best-effort: the worker
+ * caches one deploy's page and its assets together under a build-stamped key,
+ * so a browser can never assemble a half-and-half app out of one deploy's HTML
+ * and another's JavaScript — the failure every other layer here was written to
+ * recover from after the fact. It also means the game opens with no network at
+ * all, which the rest of the design already assumed.
+ */
+function serviceWorker(build: string, assets: { js: string; css: string[] }): string {
+  const files = ['./', './index.html', assets.js, ...assets.css];
+  return `// generated at build time — see vite.config.ts
+const BUILD = ${JSON.stringify(build)};
+const CACHE = 'intralines-' + BUILD;
+const FILES = ${JSON.stringify(files)};
+const NET_TIMEOUT_MS = 3500;
+
+self.addEventListener('install', (e) => {
+  // take over as soon as this build is cached: a worker sitting in "waiting"
+  // is exactly the stuck-on-the-old-version problem, one layer down
+  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(FILES)).then(() => self.skipWaiting()));
+});
+
+self.addEventListener('activate', (e) => {
+  e.waitUntil(
+    caches
+      .keys()
+      .then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
+      .then(() => self.clients.claim()),
+  );
+});
+
+function timedFetch(req) {
+  return new Promise((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error('slow')), NET_TIMEOUT_MS);
+    fetch(req).then(
+      (r) => { clearTimeout(t); resolve(r); },
+      (err) => { clearTimeout(t); reject(err); },
+    );
+  });
+}
+
+self.addEventListener('fetch', (e) => {
+  const req = e.request;
+  if (req.method !== 'GET') return;
+  const url = new URL(req.url);
+  if (url.origin !== self.location.origin) return; // third parties: not ours
+
+  // the build stamp must always come from the server, or nothing can ever
+  // notice a new deploy
+  if (url.pathname.endsWith('/version.json')) return;
+
+  // city packs are tens of megabytes and already live in IndexedDB
+  if (url.pathname.includes('/cities/')) return;
+
+  if (req.mode === 'navigate') {
+    // network first, so a new deploy is picked up on the very next visit,
+    // with the cached page as the offline (or slow) answer
+    e.respondWith(
+      timedFetch(req)
+        .then((res) => {
+          if (res && res.ok) {
+            const copy = res.clone();
+            caches.open(CACHE).then((c) => c.put('./index.html', copy));
+          }
+          return res;
+        })
+        .catch(() =>
+          caches
+            .match(req, { ignoreSearch: true })
+            .then((hit) => hit || caches.match('./index.html'))
+            .then((hit) => hit || Response.error()),
+        ),
+    );
+    return;
+  }
+
+  // hashed build assets never change under their own name
+  if (url.pathname.includes('/assets/')) {
+    e.respondWith(
+      caches.match(req).then(
+        (hit) =>
+          hit ||
+          fetch(req).then((res) => {
+            if (res && res.ok) {
+              const copy = res.clone();
+              caches.open(CACHE).then((c) => c.put(req, copy));
+            }
+            return res;
+          }),
+      ),
+    );
+  }
+});
+`;
 }
 
 export default defineConfig({

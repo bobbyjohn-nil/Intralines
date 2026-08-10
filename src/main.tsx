@@ -4,7 +4,7 @@ import { ErrorBoundary, ErrorCenter } from './ui/ErrorCenter';
 import { ConfirmHost } from './ui/Confirm';
 import { installGlobalErrorHandlers } from './game/errors';
 import { migrateLocalStorage } from './game/migrate';
-import { tidyUpdateUrl } from './game/update';
+import { registerServiceWorker, tidyUpdateUrl } from './game/update';
 import './styles.css';
 
 installGlobalErrorHandlers();
@@ -18,6 +18,7 @@ try {
   // storage unavailable — fine
 }
 tidyUpdateUrl();
+registerServiceWorker();
 
 // No StrictMode: the MapLibre map + WebGL bus layer must not double-mount.
 createRoot(document.getElementById('root')!).render(

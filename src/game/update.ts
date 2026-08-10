@@ -135,3 +135,63 @@ export function tidyUpdateUrl(): void {
     // history unavailable — a cosmetic query string is harmless
   }
 }
+
+/**
+ * Install the service worker that keeps a deploy's page and its files
+ * together. Without it every layer here is recovery after a broken boot; with
+ * it the browser cannot assemble a mismatched app in the first place.
+ *
+ * The reload on takeover is the important detail: when a worker for a NEW
+ * build claims a page that an OLD worker was serving, the page in front of
+ * the player is still the old one, and its next request would be answered
+ * from the new build. One reload puts page and files back in step. A first
+ * install never triggers it — there was nothing to be out of step with.
+ */
+export function registerServiceWorker(): void {
+  if (!('serviceWorker' in navigator)) return;
+  // a dev build has no generated worker to install
+  if (BUILD_ID.startsWith('dev')) return;
+
+  const hadController = !!navigator.serviceWorker.controller;
+  let reloading = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!hadController || reloading) return;
+    reloading = true;
+    window.location.reload();
+  });
+
+  // The worker is for the *next* visit, so it waits for load rather than
+  // competing with boot — but the page injects its own app script after
+  // resolving version.json, which can land after load has already fired. A
+  // plain listener would then never run and the worker would silently never
+  // install, which is exactly how this failed the first time.
+  const start = (): void => {
+    void navigator.serviceWorker
+      .register(new URL('sw.js', document.baseURI).href)
+      .catch(() => {
+        // unsupported, blocked by policy, or private mode — the app still
+        // works, it just loses the guarantee
+      });
+  };
+  if (document.readyState === 'complete') start();
+  else window.addEventListener('load', start, { once: true });
+}
+
+/**
+ * The escape hatch. If a worker ever ships broken, this is how a player gets
+ * out: drop every worker and cache, then reload past the HTTP cache.
+ */
+export async function resetServiceWorker(): Promise<void> {
+  try {
+    const regs = (await navigator.serviceWorker?.getRegistrations?.()) ?? [];
+    await Promise.all(regs.map((r) => r.unregister()));
+  } catch {
+    // nothing registered
+  }
+  try {
+    const keys = (await caches?.keys?.()) ?? [];
+    await Promise.all(keys.map((k) => caches.delete(k)));
+  } catch {
+    // no Cache Storage
+  }
+}

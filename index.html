@@ -85,7 +85,7 @@
             '<button id="il-reload" style="padding:9px 16px;border-radius:9px;border:none;' +
             'background:#2c2a24;color:#ffe9a8;font-weight:600;cursor:pointer">Reload</button>' +
             '<button id="il-clear" style="padding:9px 16px;border-radius:9px;' +
-            'border:1px solid #d0c7ae;background:#fff;cursor:pointer">Clear map cache &amp; reload</button>' +
+            'border:1px solid #d0c7ae;background:#fff;cursor:pointer">Clear caches &amp; reload</button>' +
             '</div>' +
             '<p style="margin:12px 0 0;font-size:12px;opacity:.6">Your saved games are kept either way.</p></div>';
           document.getElementById('il-reload').onclick = function () {
@@ -102,7 +102,34 @@
             var finish = function () {
               if (done) return;
               done = true;
-              location.reload();
+              // past the service worker as well: if a bad one ever ships,
+              // this button is the only way out, so it must not need the app
+              var bail = function () {
+                location.replace(
+                  location.href.split('#')[0].split('?')[0] + '?fresh=' + Date.now()
+                );
+              };
+              try {
+                var jobs = [];
+                if (navigator.serviceWorker && navigator.serviceWorker.getRegistrations) {
+                  jobs.push(
+                    navigator.serviceWorker.getRegistrations().then(function (rs) {
+                      return Promise.all(rs.map(function (r) { return r.unregister(); }));
+                    })
+                  );
+                }
+                if (window.caches && caches.keys) {
+                  jobs.push(
+                    caches.keys().then(function (ks) {
+                      return Promise.all(ks.map(function (k) { return caches.delete(k); }));
+                    })
+                  );
+                }
+                Promise.all(jobs).then(bail, bail);
+                setTimeout(bail, 2000);
+              } catch (err) {
+                bail();
+              }
             };
             setTimeout(finish, 2500); // never leave the player stuck
             try {
