@@ -448,7 +448,7 @@ export function updateDraftCursor(map: MLMap, from: LngLat | null, to: LngLat | 
 // from how urban its surroundings are and whether it's a main road — the
 // same recipe the bus animation uses to slow buses down.
 
-import { congestionGain, trafficFactor } from '../game/constants';
+import { congestionGain, measuredBusyness, trafficFactor } from '../game/constants';
 
 let trafficFeatures: GeoJSON.Feature[] | null = null;
 let trafficCity: string | null = null;
@@ -483,7 +483,7 @@ function buildTrafficFeatures(pack: CityPack): GeoJSON.Feature[] {
     const b = pack.nodes[e.b];
     if (!a || !b) continue;
     const mid: LngLat = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
-    const gain = congestionGain(e.kmh, urbanAt(mid));
+    const gain = congestionGain(e.kmh, urbanAt(mid), measuredBusyness(pack.traffic, mid));
     feats.push({
       type: 'Feature',
       properties: { gain: Math.round(gain * 100) / 100 },

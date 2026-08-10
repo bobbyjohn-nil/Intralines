@@ -65,6 +65,25 @@ export interface RoadEdge {
   name?: string;
 }
 
+/**
+ * Measured average daily traffic, reduced to a grid. Baked into the pack so
+ * the counts are there offline, forever, with no live traffic feed.
+ */
+export interface TrafficGrid {
+  /** cell size in degrees */
+  cell: number;
+  lng0: number;
+  lat0: number;
+  cols: number;
+  rows: number;
+  /** the city's busiest counted cell, for normalizing */
+  busiest: number;
+  /** mean AADT per cell, row-major */
+  aadt: number[];
+  /** how many counted road segments went into it */
+  samples: number;
+}
+
 export interface DemoBuilding {
   ring: LngLat[];
   h: number;
@@ -83,6 +102,8 @@ export interface CityPack {
   parks?: LngLat[][];
   /** airports and regional rail stations (special demand generators) */
   pois?: Poi[];
+  /** measured traffic counts; absent when none were published for this city */
+  traffic?: TrafficGrid;
 }
 
 // ---------------------------------------------------------------------------

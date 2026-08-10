@@ -13,7 +13,7 @@ import { BusLayer3D } from './busLayer3d';
 import type { LineExtras } from './busLayer3d';
 import { cumulativeDist } from '../game/routing';
 import { fastDistM } from '../game/geo';
-import { congestionGain, DEPOT_CAPACITY } from '../game/constants';
+import { congestionGain, DEPOT_CAPACITY, measuredBusyness } from '../game/constants';
 
 /** quick probe: can we actually reach the tile server? */
 async function tilesReachable(): Promise<boolean> {
@@ -482,7 +482,7 @@ export function MapView({ pack }: { pack: CityPack }) {
           const kmh = g.speedNear(pnt, 60);
           if (kmh !== null && kmh >= 42) mainCnt++;
           // rush hour lives on the arterials: class-dominant congestion
-          gainSum += congestionGain(kmh ?? 30, urbanHere);
+          gainSum += congestionGain(kmh ?? 30, urbanHere, measuredBusyness(pack.traffic, pnt));
         }
       }
       // riders along this corridor who would otherwise drive are off the

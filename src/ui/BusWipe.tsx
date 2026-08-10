@@ -36,7 +36,7 @@ export function BusWipe() {
       {/* the bus rides on the sheet's leading edge, so it tows it away */}
       <div className="bus-wipe-sheet">
         <div className="bus-wipe-bus">
-          <BusSide length={1} size={92} />
+          <BusSide length={1} size={133} />
         </div>
       </div>
     </div>

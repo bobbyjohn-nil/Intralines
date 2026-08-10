@@ -5,7 +5,7 @@
 const DB_NAME = 'intralines';
 const OLD_DB_NAME = 'transit-lines';
 const STORE = 'cityPacks';
-export const PACK_FORMAT_VERSION = 7; // v7: airport + regional rail demand
+export const PACK_FORMAT_VERSION = 8; // v8: measured traffic counts (AADT)
 
 function open(name: string): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {

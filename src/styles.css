@@ -725,18 +725,23 @@ button.chip:hover {
   animation: wipe-away 1.05s cubic-bezier(0.55, 0, 0.2, 1) forwards;
 }
 
-/* parented to the sheet, so it stays glued to the leading edge */
+/* Parked mid-sheet, exactly where the boot splash draws it, and carried along
+   as the sheet leaves — so the bus you were watching load is the bus that
+   pulls out. */
 .bus-wipe-bus {
   position: absolute;
   top: 50%;
-  left: 0;
+  left: 50%;
   color: #2c2a24;
-  transform: translate(-96%, -50%);
+  /* the splash stacks the bus above its wordmark, so sit where it sat */
+  transform: translate(-50%, calc(-50% - 34px));
 }
 
+/* a beat at rest, then away like a bus pulling off a stop */
 @keyframes wipe-away {
-  0% { transform: translateX(-4%); }
-  100% { transform: translateX(106%); }
+  0% { transform: translateX(0); }
+  14% { transform: translateX(0); }
+  100% { transform: translateX(112%); }
 }
 
 /* ---------- timetable editor ---------- */

@@ -1,4 +1,4 @@
-import type { BlockGroup, LngLat, Poi, RoadEdge } from '../types';
+import type { BlockGroup, LngLat, Poi, RoadEdge, TrafficGrid } from '../types';
 
 export declare const ROAD_CLASSES: string[];
 export declare function overpassPoiQuery(bbox: [number, number, number, number]): string;
@@ -31,3 +31,18 @@ export declare function buildBlockGroups(
   sectors?: { edu: Map<string, number>; tour: Map<string, number> },
 ): BlockGroup[];
 export declare function estimateJobs(bgs: BlockGroup[], center: LngLat): void;
+
+export declare function aadtQueryUrl(
+  base: string,
+  bbox: [number, number, number, number],
+  field?: string,
+): string;
+export declare function parseAadt(
+  geojson: unknown,
+  field?: string,
+): { pt: LngLat; aadt: number }[];
+export declare function buildTrafficGrid(
+  samples: { pt: LngLat; aadt: number }[],
+  bbox: [number, number, number, number],
+): TrafficGrid | null;
+export declare function trafficAadtAt(grid: TrafficGrid | null | undefined, pt: LngLat): number;

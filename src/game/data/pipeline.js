@@ -619,3 +619,133 @@ export function estimateJobs(bgs, center) {
     b.jobs = Math.round((ws[i] / wsum) * target);
   });
 }
+
+// ---------------------------------------------------------------------------
+// Measured traffic
+//
+// AADT — annual average daily traffic — is the count highway agencies publish
+// for a road: the average number of vehicles that use it per day. It is
+// exactly the "average traffic" a congestion model wants, and unlike a live
+// traffic feed it is a static number, so it can be baked into the city pack
+// once and used forever without a network.
+//
+// Coverage is by nature partial: agencies count arterials and highways, not
+// every residential street. So the counts are reduced to a coarse grid of how
+// busy each part of town measurably is, and road class still decides each
+// street's share of that. A city with no coverage keeps the modeled estimate.
+
+/** ArcGIS REST query for AADT features inside a bbox */
+export function aadtQueryUrl(base, bbox, field = 'AADT') {
+  const [w, s, e, n] = bbox;
+  const params = new URLSearchParams({
+    f: 'geojson',
+    where: `${field} > 0`,
+    geometry: `${w},${s},${e},${n}`,
+    geometryType: 'esriGeometryEnvelope',
+    inSR: '4326',
+    outSR: '4326',
+    spatialRel: 'esriSpatialRelIntersects',
+    outFields: field,
+    returnGeometry: 'true',
+    resultRecordCount: '4000',
+  });
+  return `${base}/query?${params}`;
+}
+
+/** midpoint + count for every usable feature in an AADT response */
+export function parseAadt(geojson, field = 'AADT') {
+  const out = [];
+  for (const f of geojson?.features ?? []) {
+    const raw = f?.properties?.[field] ?? f?.properties?.[field?.toLowerCase()];
+    const aadt = Number(raw);
+    if (!isFinite(aadt) || aadt <= 0) continue;
+    const pt = featureMidpoint(f?.geometry);
+    if (pt) out.push({ pt, aadt });
+  }
+  return out;
+}
+
+/** a representative point for a point/line/multiline feature */
+function featureMidpoint(geom) {
+  if (!geom) return null;
+  if (geom.type === 'Point') return geom.coordinates.slice(0, 2);
+  const lines =
+    geom.type === 'LineString' ? [geom.coordinates]
+    : geom.type === 'MultiLineString' ? geom.coordinates
+    : null;
+  if (!lines || !lines.length) return null;
+  const line = lines[Math.floor(lines.length / 2)];
+  if (!line?.length) return null;
+  const mid = line[Math.floor(line.length / 2)];
+  return mid ? mid.slice(0, 2) : null;
+}
+
+/** grid cell size, in degrees — roughly a kilometre of city */
+const TRAFFIC_CELL = 0.01;
+
+/**
+ * Reduce scattered counts to a grid of mean AADT per cell, then normalize
+ * against the city's own busiest corridor so a small city and a big one both
+ * span the same 0..1 range of "measurably busy".
+ */
+export function buildTrafficGrid(samples, bbox) {
+  if (!samples?.length) return null;
+  const [w, s, e, n] = bbox;
+  const cols = Math.max(1, Math.ceil((e - w) / TRAFFIC_CELL));
+  const rows = Math.max(1, Math.ceil((n - s) / TRAFFIC_CELL));
+  const sum = new Float64Array(cols * rows);
+  const count = new Int32Array(cols * rows);
+  for (const { pt, aadt } of samples) {
+    const cx = Math.floor((pt[0] - w) / TRAFFIC_CELL);
+    const cy = Math.floor((pt[1] - s) / TRAFFIC_CELL);
+    if (cx < 0 || cy < 0 || cx >= cols || cy >= rows) continue;
+    const i = cy * cols + cx;
+    sum[i] += aadt;
+    count[i] += 1;
+  }
+  const mean = new Array(cols * rows).fill(0);
+  let busiest = 0;
+  for (let i = 0; i < mean.length; i++) {
+    if (!count[i]) continue;
+    mean[i] = Math.round(sum[i] / count[i]);
+    busiest = Math.max(busiest, mean[i]);
+  }
+  if (!busiest) return null;
+  // counted cells are sparse; spread each one into its neighbours so a stop
+  // one block off a counted arterial still sees the traffic it sits in
+  const spread = mean.slice();
+  for (let y = 0; y < rows; y++) {
+    for (let x = 0; x < cols; x++) {
+      if (mean[y * cols + x]) continue;
+      let best = 0;
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          const nx = x + dx;
+          const ny = y + dy;
+          if (nx < 0 || ny < 0 || nx >= cols || ny >= rows) continue;
+          best = Math.max(best, mean[ny * cols + nx] * 0.6);
+        }
+      }
+      spread[y * cols + x] = Math.round(best);
+    }
+  }
+  return {
+    cell: TRAFFIC_CELL,
+    lng0: w,
+    lat0: s,
+    cols,
+    rows,
+    busiest,
+    aadt: spread,
+    samples: samples.length,
+  };
+}
+
+/** measured AADT at a point, or 0 where nothing was counted nearby */
+export function trafficAadtAt(grid, pt) {
+  if (!grid) return 0;
+  const x = Math.floor((pt[0] - grid.lng0) / grid.cell);
+  const y = Math.floor((pt[1] - grid.lat0) / grid.cell);
+  if (x < 0 || y < 0 || x >= grid.cols || y >= grid.rows) return 0;
+  return grid.aadt[y * grid.cols + x] || 0;
+}

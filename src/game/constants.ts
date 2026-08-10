@@ -246,10 +246,36 @@ const TRAFFIC_ANCHORS: [number, number][] = [
  * scale the effect (a downtown arterial crawls; a country highway just
  * thickens a little).
  */
-export function congestionGain(kmh: number, urban: number): number {
+export function congestionGain(kmh: number, urban: number, measured = -1): number {
   const classWeight =
     kmh >= 70 ? 1.35 : kmh >= 42 ? 1.15 : kmh >= 35 ? 0.55 : 0.18;
-  return classWeight * (0.35 + 0.65 * Math.min(Math.max(urban, 0), 1));
+  // Where a highway agency has actually counted this part of town, its
+  // published average daily traffic replaces the density guess. Road class
+  // still decides each street's share of it: agencies count arterials, not
+  // the residential blocks beside them, so a quiet street in a busy cell must
+  // not inherit the arterial's jam.
+  const busy = measured >= 0 ? measured : Math.min(Math.max(urban, 0), 1);
+  return classWeight * (0.35 + 0.65 * Math.min(Math.max(busy, 0), 1));
+}
+
+/**
+ * Measured busyness 0..1 for a spot, or -1 where nothing was counted nearby
+ * and the modeled estimate should stand in. Normalized against the city's own
+ * busiest counted corridor, so a small city reads on the same scale as a big
+ * one.
+ */
+export function measuredBusyness(
+  grid: { aadt: number[]; busiest: number; cell: number; lng0: number; lat0: number; cols: number; rows: number } | null | undefined,
+  pt: [number, number],
+): number {
+  if (!grid || !grid.busiest) return -1;
+  const x = Math.floor((pt[0] - grid.lng0) / grid.cell);
+  const y = Math.floor((pt[1] - grid.lat0) / grid.cell);
+  if (x < 0 || y < 0 || x >= grid.cols || y >= grid.rows) return -1;
+  const aadt = grid.aadt[y * grid.cols + x] || 0;
+  if (aadt <= 0) return -1;
+  // square-root so the busiest road does not flatten everything below it
+  return Math.min(1, Math.sqrt(aadt / grid.busiest));
 }
 
 // ---------------------------------------------------------------------------

@@ -13,10 +13,12 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { gunzipSync, gzipSync } from 'node:zlib';
 import {
-  applyPoiDemand, buildBlockGroups, buildRoadGraph, overpassPoiQuery, overpassQuery,
-  overpassScenicQuery, parseAcs, parsePois,
+  aadtQueryUrl, applyPoiDemand, buildBlockGroups, buildRoadGraph, buildTrafficGrid,
+  overpassPoiQuery, overpassQuery,
+  overpassScenicQuery, parseAadt, parseAcs, parsePois,
   parseRac, parseScenic, parseWac,
 } from '../src/game/data/pipeline.js';
+import { AADT_SOURCES } from '../src/game/data/aadt.sources.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -288,6 +290,26 @@ async function bake(id, force) {
   } catch (e) {
     console.warn(`  airport/rail POI fetch failed (optional): ${e.message}`);
   }
+  // measured average daily traffic: fetched here, once, and baked into the
+  // pack so players get real congestion with no network of their own
+  let traffic = null;
+  for (const src of AADT_SOURCES) {
+    try {
+      const json = await getJson(aadtQueryUrl(src.url, meta.bbox, src.field));
+      const samples = parseAadt(json, src.field);
+      if (samples.length < 5) continue;
+      traffic = buildTrafficGrid(samples, meta.bbox);
+      if (traffic) {
+        console.log(`  traffic counts: ${samples.length} segments from ${src.name}`);
+        source += ` + ${src.name} traffic counts`;
+        break;
+      }
+    } catch (e) {
+      console.warn(`  ${src.name} traffic counts unavailable: ${e.message}`);
+    }
+  }
+  if (!traffic) console.warn('  no traffic counts published — congestion will be modeled');
+
   const blockGroups = buildBlockGroups(
     features, pop, wac ? wac.jobs : null, meta.bbox, meta.center,
     wac ? { edu: wac.edu, tour: wac.tour } : undefined,
@@ -302,6 +324,7 @@ async function bake(id, force) {
     water: scenic.water,
     parks: scenic.parks,
     pois,
+    ...(traffic ? { traffic } : {}),
   };
   const json = JSON.stringify(pack);
   const outPath = join(__dirname, '..', 'public', 'cities', `${id}.json.gz`);

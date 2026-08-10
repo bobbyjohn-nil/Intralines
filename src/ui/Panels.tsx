@@ -157,6 +157,13 @@ function MapOptionsPanel() {
               07–09 and 16–18; busy downtown corridors jam hardest, and strong bus
               ridership eases it.
             </small>
+            <small className="dim">
+              {pack?.traffic
+                ? `Congestion is weighted by real traffic counts — ${fmtInt(
+                    pack.traffic.samples,
+                  )} road segments of published average daily traffic, baked into this city and used offline.`
+                : 'No published traffic counts for this city, so congestion is estimated from road class and how built-up the surroundings are.'}
+            </small>
           </>
         )}
       </div>

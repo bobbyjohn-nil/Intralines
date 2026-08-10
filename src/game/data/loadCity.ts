@@ -1,5 +1,6 @@
 import type { CityMeta, CityPack, Poi } from '../types';
 import { idbGetPack, idbPutPack } from './idb';
+import { fetchTrafficGrid } from './aadt';
 import {
   applyPoiDemand, buildBlockGroups, buildRoadGraph, overpassPoiQuery, overpassQuery,
   overpassScenicQuery, parseAcs, parsePois, parseRac, parseScenic, parseWac,
@@ -97,6 +98,16 @@ export async function loadCity(meta: CityMeta, progress: ProgressFn): Promise<Ci
     // optional flavor demand — the game works without it
   }
 
+  // measured traffic counts, baked in now so congestion works offline later
+  let traffic = null as Awaited<ReturnType<typeof fetchTrafficGrid>>;
+  try {
+    traffic = await fetchTrafficGrid(meta, (d) =>
+      progress(`Measuring ${meta.name}'s traffic…`, d),
+    );
+  } catch {
+    // counts are a bonus, never a blocker
+  }
+
   progress(`Building ${meta.name}…`, 'assembling city pack');
   const blockGroups = buildBlockGroups(
     features, popByBg, wac ? wac.jobs : null, meta.bbox, meta.center,
@@ -119,6 +130,7 @@ export async function loadCity(meta: CityMeta, progress: ProgressFn): Promise<Ci
     water: scenic.water,
     parks: scenic.parks,
     pois,
+    traffic: traffic ?? undefined,
   };
   progress(`Saving ${meta.name}…`, 'caching locally — future launches are offline');
   await idbPutPack(meta.id, pack);
