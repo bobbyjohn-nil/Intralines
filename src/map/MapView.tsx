@@ -10,6 +10,7 @@ import {
   updateHeatmap, updateNetwork, updateStopHover, updateTraffic, updateZoning,
 } from './overlays';
 import { BusLayer3D } from './busLayer3d';
+import { loadCustomModels, onCustomModelsLoaded } from './customModels';
 import type { LineExtras } from './busLayer3d';
 import { cumulativeDist } from '../game/routing';
 import { fastDistM } from '../game/geo';
@@ -147,6 +148,10 @@ export function MapView({ pack }: { pack: CityPack }) {
         addBoundaryMask(map, pack.meta.bbox);
         ensureOverlays(map);
         map.addLayer(busLayer);
+        // hand-made bus models, if the team shipped any. When they arrive,
+        // resend the network so live buses swap onto them.
+        void loadCustomModels();
+        onCustomModelsLoaded(() => syncAll());
         // DOM markers keep their pixel size at every zoom, which makes a depot
         // look enormous over a city-wide view. Publish the zoom as a variable
         // and let CSS shrink them back.

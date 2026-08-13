@@ -37,6 +37,8 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm test
+      # hand-made bus models must be valid before they ship (docs/MODELS.md)
+      - run: node scripts/check-models.mjs
       # bake real-city census + street data into the site so players never
       # need the in-browser download; cached so we don't hammer the sources
       - name: Restore baked city packs

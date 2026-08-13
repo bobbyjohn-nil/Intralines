@@ -5,6 +5,7 @@ import type { BusLine, LineStats, LngLat, Stop } from '../game/types';
 import { DWELL_SEC, isPeakHour, LAYOVER_MIN, trafficFactor } from '../game/constants';
 import { busModel, lineModelList, lineRefModel } from '../game/store';
 import { pointAlong } from '../game/routing';
+import { customBusMesh } from './customModels';
 
 // The living-city layer. Buses move with real kinematics (constant
 // acceleration up, braking down, cruise in between) and come to a full stop
@@ -830,6 +831,9 @@ export function makeBusMesh(
   modelId: string,
   brandColor?: string,
 ): THREE.Group {
+  // a hand-made model from the art team wins over the built-in mesh
+  const custom = customBusMesh(modelId, color, brandColor);
+  if (custom) return custom;
   const len = modelId === 'artic' ? 16 : modelId === 'minibus' ? 7 : 11;
   const g = new THREE.Group();
   const bodyColor = new THREE.Color(brandColor || color);

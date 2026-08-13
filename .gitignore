@@ -6,3 +6,4 @@ public/cities/*.json.gz
 .DS_Store
 scripts/.cache
 tsconfig.tsbuildinfo
+public/models/sample.glb
